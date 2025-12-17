@@ -1,0 +1,48 @@
+# .github/workflows/build-iOS-IPA.yml
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.3
+
+      - run: flutter pub get
+
+      - name: Match – SSH (finally works)
+        env:
+          MATCH_GIT_URL: git@github.com:sevenlightsflower0/ios-certificates.git
+          MATCH_GIT_PRIVATE_KEY: ${{ secrets.MATCH_GIT_PRIVATE_KEY }}
+        run: |
+          gem install fastlane -NV
+
+          mkdir -p ~/.ssh
+          echo "$MATCH_GIT_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_match
+          chmod 600 ~/.ssh/id_match
+
+          # Проверяем ключ — если невалидный, сразу падаем с понятной ошибкой
+          ssh-keygen -l -f ~/.ssh/id_match && echo "SSH key is valid" || (echo "INVALID KEY!" && cat ~/.ssh/id_match && exit 1)
+
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_match
+
+          fastlane match appstore --git_url "$MATCH_GIT_URL" --readonly --verbose
+
+      - name: Build IPA
+        run: flutter build ipa --release
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: jrrplayerapp.ipa
+          path: build/ios/ipa/*.ipa

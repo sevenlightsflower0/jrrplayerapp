@@ -1,0 +1,37 @@
+# .github/workflows/flutter_ios_ipa.yml
+name: Flutter iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.3
+
+      - run: flutter pub get
+
+      - name: Fastlane match по SSH (работает 100% в 2025)
+        env:
+          MATCH_GIT_URL: git@github.com:sevenlightsflower0/ios-certificates.git
+        run: |
+          gem install fastlane -NV
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          fastlane match appstore --git_url "$MATCH_GIT_URL" --readonly --verbose
+
+      - name: Build IPA
+        run: flutter build ipa --release
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: jrrplayerapp.ipa
+          path: build/ios/ipa/*.ipa

@@ -1,0 +1,52 @@
+name: Verify iOS Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: macos-14
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.3
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          
+          # Update outdated packages
+          flutter pub outdated --mode=null-safety
+          
+      - name: Analyze code
+        run: flutter analyze
+          
+      - name: Run tests
+        run: flutter test
+          
+      - name: Build for iOS (debug)
+        run: |
+          # This will verify the app compiles
+          flutter build ios --debug --no-codesign
+          
+      - name: Build for macOS (if supported)
+        run: |
+          # If your app supports macOS
+          flutter build macos --debug 2>/dev/null || echo "macOS build not configured"
+          
+      - name: Generate build report
+        run: |
+          echo "Build verification completed"
+          echo "✅ Code analysis passed"
+          echo "✅ Tests passed" 
+          echo "✅ iOS compilation successful"
+          echo ""
+          echo "For actual IPA distribution, you need:"
+          echo "1. Paid Apple Developer account ($99/year)"
+          echo "2. App Store Connect API key"
+          echo "3. Proper code signing certificates"

@@ -1,0 +1,84 @@
+name: Build iOS with Development Certificates
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.3
+
+      - run: flutter pub get
+
+      - name: Generate development certificates
+        run: |
+          # Create a self-signed certificate for development
+          openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=com.example.jRockRadioFlutter"
+          
+          # Create development provisioning profile
+          cat > development.mobileprovision << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>AppIDName</key>
+              <string>XC Wildcard</string>
+              <key>ApplicationIdentifierPrefix</key>
+              <array><string>$(AppIdentifierPrefix)</string></array>
+              <key>CreationDate</key>
+              <date>2023-01-01T00:00:00Z</date>
+              <key>Platform</key>
+              <array><string>iOS</string></array>
+              <key>IsXcodeManaged</key>
+              <true/>
+              <key>DeveloperCertificates</key>
+              <array></array>
+              <key>Entitlements</key>
+              <dict>
+                  <key>keychain-access-groups</key>
+                  <array><string>$(AppIdentifierPrefix)</string></array>
+                  <key>get-task-allow</key>
+                  <true/>
+                  <key>application-identifier</key>
+                  <string>$(AppIdentifierPrefix)com.example.jRockRadioFlutter</string>
+                  <key>com.apple.developer.team-identifier</key>
+                  <string>$(TeamIdentifierPrefix)</string>
+              </dict>
+              <key>ExpirationDate</key>
+              <date>2024-01-01T00:00:00Z</date>
+              <key>Name</key>
+              <string>iOS Team Provisioning Profile: *</string>
+              <key>ProvisionsAllDevices</key>
+              <true/>
+              <key>TeamIdentifier</key>
+              <array><string>$(TeamIdentifierPrefix)</string></array>
+              <key>TeamName</key>
+              <string>$(TeamName)</string>
+              <key>TimeToLive</key>
+              <integer>365</integer>
+              <key>UUID</key>
+              <string>$(UUID)</string>
+              <key>Version</key>
+              <integer>1</integer>
+          </dict>
+          </plist>
+          EOF
+          
+      - name: Build for simulator
+        run: |
+          # Build for iOS simulator (no certificate needed)
+          flutter build ios --simulator --release
+          
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: jrrplayerapp-simulator.app
+          path: build/ios/iphonesimulator/Runner.app

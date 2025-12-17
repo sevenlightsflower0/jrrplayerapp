@@ -1,0 +1,37 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Flutter Chrome (no CORS)",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "chrome",
+            "program": "lib/main.dart",
+            "args": [
+                "--disable-web-security",
+                //"--web-browser-flag=--disable-web-security",
+                "--web-browser-flag=--disable-site-isolation-trials"
+                //"--user-data-dir=./chrome_profile"
+            ]
+        },
+        {
+            "name": "Flutter Chrome",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "chrome",
+            "program": "lib/main.dart"
+        },
+        {
+            "name": "Flutter Android",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "android"
+        },
+        {
+            "name": "Flutter Windows",
+            "request": "launch", 
+            "type": "dart",
+            "deviceId": "windows"
+        }
+    ]
+}

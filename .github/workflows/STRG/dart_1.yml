@@ -1,0 +1,80 @@
+name: Actual iOS-ipa-build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: 🎉 iOS Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+      - run: flutter pub get
+      
+      # Configure git and network settings
+      - name: Configure git and network
+        run: |
+          git config --global http.postBuffer 524288000
+          git config --global https.postBuffer 524288000
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
+          
+      # Update pod repo with retry
+      - name: Update CocoaPods repository with retry
+        working-directory: ios
+        run: |
+          for i in {1..3}; do
+            echo "Attempt $i: Updating CocoaPods repository..."
+            pod repo update && break
+            if [ $i -eq 3 ]; then
+              echo "Failed to update pod repo after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
+      
+      # Run pod install with retry (separately)
+      - name: Install CocoaPods dependencies with retry
+        working-directory: ios
+        run: |
+          for i in {1..5}; do
+            echo "Attempt $i: Running pod install..."
+            pod install --repo-update && break
+            if [ $i -eq 5 ]; then
+              echo "Failed to install pods after 5 attempts"
+              exit 1
+            fi
+            echo "Pod install failed, retrying in 10 seconds..."
+            sleep 10
+          done
+
+      # Now build without trying to run pod install again
+      - name: Build iOS
+        run: |
+          # Set environment variable to prevent Flutter from running pod install
+          export FLUTTER_POD_INSTALL=false
+          flutter build ios --release --no-codesign
+
+      - run: mkdir Payload
+        working-directory: build/ios/iphoneos
+
+      - run: mv Runner.app/ Payload
+        working-directory: build/ios/iphoneos
+
+      - name: Zip output
+        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
+        working-directory: build/ios/iphoneos
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/ios/iphoneos/FlutterIpaExport.ipa
+          tag: v1.0
+          overwrite: true
+          body: "This is first release"
