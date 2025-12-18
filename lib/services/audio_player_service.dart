@@ -869,32 +869,34 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> pause() async {
     try {
       debugPrint('Pausing playback');
-      await _player?.pause();
-      await _saveCurrentPosition();
-      
-      // Пауза в background audio
-      await _audioHandler?.pause();
-      
-      // На Web: останавливаем опрос метаданных при паузе
-      if (kIsWeb && !_isPodcastMode) {
-        _stopWebMetadataPolling();
+      final player = getPlayer();
+      if (player != null && player.playing) {
+        await player.pause();
+        await _saveCurrentPosition();
+        
+        // Не вызываем _audioHandler?.pause() чтобы избежать цикла
+        // Вместо этого обновляем состояние через слушателей
+        _notifyListeners();
       }
-      
-      _notifyListeners();
     } catch (e) {
       debugPrint('Error pausing playback: $e');
+      // Не перебрасываем исключение, чтобы не блокировать UI
     }
   }
 
   Future<void> _saveCurrentPosition([Duration? position]) async {
     if (_currentEpisode != null) {
-      final currentPosition = position ?? _player?.position ?? Duration.zero;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(
-        'position_${_currentEpisode!.id}', 
-        currentPosition.inMilliseconds
-      );
-      debugPrint('Saved position for episode ${_currentEpisode!.id}: ${currentPosition.inSeconds}s');
+      try {
+        final currentPosition = position ?? _player?.position ?? Duration.zero;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(
+          'position_${_currentEpisode!.id}', 
+          currentPosition.inMilliseconds
+        );
+        debugPrint('Saved position for episode ${_currentEpisode!.id}: ${currentPosition.inSeconds}s');
+      } catch (e) {
+        debugPrint('Error saving position: $e');
+      }
     }
   }
 
