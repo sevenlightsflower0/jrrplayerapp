@@ -3,11 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
   MediaItem? _currentMediaItem;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
+  bool _isHandlingControl = false; // Флаг для предотвращения циклов
 
   AudioPlayerHandler(this.audioPlayerService) {
     // Инициализируем начальное состояние
@@ -101,6 +104,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _onAudioServiceUpdate() {
+    // Игнорируем обновления, если мы сами вызвали управление
+    if (_isHandlingControl) return;
+    
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
     
@@ -212,6 +218,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   @override
   Future<void> play() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: play called');
     try {
       // ВОЗОБНОВЛЯЕМ воспроизведение через сервис
@@ -221,37 +230,68 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await player.play();
         }
       } else {
-        await audioPlayerService.playRadio();
+        // Для радио: если уже играет, не перезапускаем
+        final player = audioPlayerService.getPlayer();
+        if (player == null || !player.playing) {
+          await audioPlayerService.playRadio();
+        }
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> pause() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: pause called');
     try {
-      // Ставим на паузу через сервис, который сохранит позицию
-      await audioPlayerService.pause();
+      // Ставим на паузу напрямую через player, а не через сервис
+      final player = audioPlayerService.getPlayer();
+      if (player != null && player.playing) {
+        await player.pause();
+        // Сохраняем позицию для подкастов
+        if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
+          final position = player.position;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt(
+            'position_${audioPlayerService.currentEpisode!.id}', 
+            position.inMilliseconds
+          );
+        }
+      }
     } catch (e) {
       debugPrint('Error in background pause: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> stop() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: stop called');
     try {
       // Останавливаем через сервис, который сохранит позицию
       await audioPlayerService.stopPodcast();
     } catch (e) {
       debugPrint('Error in background stop: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> seek(Duration position) async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: seek to $position');
     try {
       if (audioPlayerService.isPodcastMode) {
@@ -259,11 +299,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       }
     } catch (e) {
       debugPrint('Error in background seek: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> skipToNext() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: skipToNext');
     try {
       if (audioPlayerService.isPodcastMode) {
@@ -271,11 +316,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       }
     } catch (e) {
       debugPrint('Error in background skipToNext: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> skipToPrevious() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: skipToPrevious');
     try {
       if (audioPlayerService.isPodcastMode) {
@@ -283,11 +333,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       }
     } catch (e) {
       debugPrint('Error in background skipToPrevious: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> rewind() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: rewind');
     try {
       if (audioPlayerService.isPodcastMode) {
@@ -302,11 +357,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       }
     } catch (e) {
       debugPrint('Error in background rewind: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> fastForward() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: fastForward');
     try {
       if (audioPlayerService.isPodcastMode) {
@@ -322,11 +382,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       }
     } catch (e) {
       debugPrint('Error in background fastForward: $e');
+    } finally {
+      _isHandlingControl = false;
     }
   }
 
   @override
   Future<void> playMediaItem(MediaItem mediaItem) async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
     debugPrint('Background audio: playMediaItem ${mediaItem.title}');
     this.mediaItem.add(mediaItem);
     playbackState.add(playbackState.value.copyWith(
@@ -334,6 +399,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
       processingState: AudioProcessingState.ready,
       controls: _controls,
     ));
+    
+    _isHandlingControl = false;
   }
 
   @override
