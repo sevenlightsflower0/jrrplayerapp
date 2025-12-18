@@ -1,6 +1,5 @@
 // Замени весь файл
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as parser;
 import 'package:html/dom.dart' as dom;
@@ -104,9 +103,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
       // Парсим Telegram сообщения
       final messageWraps = document.querySelectorAll('.tgme_widget_message_wrap');
       
-      if (kDebugMode) {
-        debugPrint('🔍 Найдено Telegram сообщений: ${messageWraps.length}');
-      }
+      debugPrint('🔍 Найдено Telegram сообщений: ${messageWraps.length}');
 
       int newNewsCount = 0;
 
@@ -119,9 +116,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
             newNewsCount++;
           }
         } catch (e) {
-          if (kDebugMode) {
-            debugPrint('❌ Ошибка парсинга Telegram сообщения: $e');
-          }
+          debugPrint('❌ Ошибка парсинга Telegram сообщения: $e');
         }
       }
 
@@ -168,17 +163,13 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         _isLoadingMore = false;
       });
       
-      if (kDebugMode) {
-        debugPrint('✅ Загружено $newNewsCount новых новостей');
-        debugPrint('📄 Всего новостей: ${_news.length}');
-        debugPrint('➡️ Есть еще страницы: $_hasMorePages');
-        debugPrint('🔢 Текущая страница: $_currentPage');
-      }
+      debugPrint('✅ Загружено $newNewsCount новых новостей');
+      debugPrint('📄 Всего новостей: ${_news.length}');
+      debugPrint('➡️ Есть еще страницы: $_hasMorePages');
+      debugPrint('🔢 Текущая страница: $_currentPage');
     } catch (e) {
-      if (kDebugMode) {
         debugPrint('❌ Ошибка парсинга HTML: $e');
-      }
-      setState(() {
+        setState(() {
         _error = 'Ошибка обработки данных: $e';
         _isLoading = false;
         _isLoadingMore = false;
@@ -297,9 +288,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         url: url,
       );
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ Ошибка парсинга Telegram сообщения: $e');
-      }
+      debugPrint('❌ Ошибка парсинга Telegram сообщения: $e');
       return null;
     }
   }

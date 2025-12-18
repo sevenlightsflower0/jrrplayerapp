@@ -43,13 +43,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     super.initState();
     
     _audioService = Provider.of<AudioPlayerService>(context, listen: false);
-    if (kDebugMode) {
-      debugPrint('🎵 AudioPlayerWidget initState');
-      debugPrint('🎵 Initial metadata - Title: "${_audioService.currentMetadata?.title}", Artist: "${_audioService.currentMetadata?.artist}"');
-      debugPrint('🎵 Current episode: ${_audioService.currentEpisode?.title}');
-      debugPrint('🎵 Is podcast mode: ${_audioService.isPodcastMode}');
-      debugPrint('🎵 AudioHandler available: ${_audioService.audioHandler != null}');
-    }
+    debugPrint('🎵 AudioPlayerWidget initState');
+    debugPrint('🎵 Initial metadata - Title: "${_audioService.currentMetadata?.title}", Artist: "${_audioService.currentMetadata?.artist}"');
+    debugPrint('🎵 Current episode: ${_audioService.currentEpisode?.title}');
+    debugPrint('🎵 Is podcast mode: ${_audioService.isPodcastMode}');
+    debugPrint('🎵 AudioHandler available: ${_audioService.audioHandler != null}');
     
     _initializeNotifiers();
     _setupDurationSync();
@@ -71,10 +69,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   void _initializeNotifiers() {
     final player = _audioService.getPlayer();
-    if (kDebugMode) {
-      debugPrint('🎵 Player available: ${player != null}');
-      debugPrint('🎵 Player state: playing=${player?.playing}, position=${player?.position}');
-    }
+    debugPrint('🎵 Player state: playing=${player?.playing}, position=${player?.position}');
 
     _playingNotifier = _StreamValueNotifier<bool>(
       player?.playingStream ?? Stream.value(false),
@@ -117,10 +112,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       // Обновляем метаданные независимо от того, изменились они или нет
       // Это обеспечит сброс при переключении подкастов
       final newMetadata = _audioService.currentMetadata;
-      if (kDebugMode) {
-        debugPrint('🎵 AudioService update - new metadata: ${newMetadata?.title}');
-        debugPrint('🎵 Current episode: ${_audioService.currentEpisode?.title}');
-      }
+      debugPrint('🎵 AudioService update - new metadata: ${newMetadata?.title}');
+      debugPrint('🎵 Current episode: ${_audioService.currentEpisode?.title}');
 
       _metadataNotifier.value = _audioService.currentMetadata;
       _imageUpdateNotifier.value++;
@@ -252,13 +245,17 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    // Кнопка "Предыдущий"
                     IconButton(
                       icon: const Icon(Icons.skip_previous, size: 30),
-                      onPressed: () {},
-                      color: Colors.white,
+                      onPressed: _audioService.isPodcastMode 
+                          ? _playPreviousPodcast
+                          : null, // Для радио можно сделать переключение станций
+                      color: _audioService.isPodcastMode ? Colors.white : Colors.grey,
                     ),
                     SizedBox(width: mediumSpacing),
-                    // Используем ValueListenableBuilder вместо StreamBuilder для кнопки воспроизведения
+                    
+                    // Кнопка воспроизведения/паузы
                     ValueListenableBuilder<bool>(
                       valueListenable: _playingNotifier,
                       builder: (context, playing, __) {
@@ -273,10 +270,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                       },
                     ),
                     SizedBox(width: mediumSpacing),
+                    
+                    // Кнопка "Следующий"
                     IconButton(
                       icon: const Icon(Icons.skip_next, size: 30),
-                      onPressed: () {},
-                      color: AppColors.customWhite,
+                      onPressed: _audioService.isPodcastMode 
+                          ? _playNextPodcast
+                          : null, // Для радио можно сделать переключение станций
+                      color: _audioService.isPodcastMode ? AppColors.customWhite : Colors.grey,
                     ),
                   ],
                 ),
@@ -544,6 +545,28 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       return '$hours:$minutes:$seconds';
     } else {
       return '$minutes:$seconds';
+    }
+  }
+
+  Future<void> _playNextPodcast() async {
+    try {
+      await _audioService.playNextPodcast();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error playing next podcast: $e')),
+      );
+    }
+  }
+
+  Future<void> _playPreviousPodcast() async {
+    try {
+      await _audioService.playPreviousPodcast();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error playing previous podcast: $e')),
+      );
     }
   }
 

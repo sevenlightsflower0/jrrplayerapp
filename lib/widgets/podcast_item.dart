@@ -22,27 +22,38 @@ class _PodcastItemState extends State<PodcastItem> {
   double _sliderValue = 0.0;
   Duration _currentPosition = Duration.zero;
   late AudioPlayerService _audioService;
+  Duration? _cachedDuration;
 
   @override
   void initState() {
     super.initState();
     _audioService = Provider.of<AudioPlayerService>(context, listen: false);
-    _currentPosition = widget.podcast.currentPosition;
-  
+    
+    // Инициализируем начальную позицию
+    _initializeCurrentPosition();
+    
     // Слушаем изменения метаданных для обновления длительности
     _audioService.addListener(_onAudioServiceUpdate);
   }
 
-  void _onAudioServiceUpdate() {
+  Future<void> _initializeCurrentPosition() async {
+    // Загружаем сохраненную позицию для этого подкаста
     if (mounted) {
-      // Обновляем длительность, если текущий подкаст активен
-      if (_audioService.currentEpisode?.id == widget.podcast.id) {
-        final currentDuration = _audioService.currentEpisode?.duration;
-        if (currentDuration != null && currentDuration > Duration.zero) {
-          setState(() {
-            // Обновляем длительность в виджете
-          });
-        }
+      // Можно добавить загрузку из SharedPreferences
+      _currentPosition = Duration.zero; // По умолчанию
+    }
+  }
+
+  void _onAudioServiceUpdate() {
+    if (!mounted) return;
+    
+    // Обновляем длительность, если текущий подкаст активен
+    if (_audioService.currentEpisode?.id == widget.podcast.id) {
+      final currentDuration = _audioService.currentEpisode?.duration;
+      if (currentDuration != null && currentDuration > Duration.zero) {
+        setState(() {
+          _cachedDuration = currentDuration;
+        });
       }
     }
   }
@@ -52,8 +63,6 @@ class _PodcastItemState extends State<PodcastItem> {
     _audioService.removeListener(_onAudioServiceUpdate);
     super.dispose();
   }
-
-  // ДОБАВЛЕННЫЕ МЕТОДЫ:
 
   Widget _buildImage() {
     if (widget.podcast.imageUrl != null && widget.podcast.imageUrl!.isNotEmpty) {
@@ -110,8 +119,11 @@ class _PodcastItemState extends State<PodcastItem> {
   }
 
   void _seekPodcast(double value, AudioPlayerService audioService) {
+    final Duration? actualDuration = _getActualDuration();
+    if (actualDuration == null || actualDuration.inMilliseconds == 0) return;
+    
     final newPosition = Duration(
-      milliseconds: (value * widget.podcast.duration.inMilliseconds).round()
+      milliseconds: (value * actualDuration.inMilliseconds).round()
     );
     setState(() {
       _currentPosition = newPosition;
@@ -129,18 +141,35 @@ class _PodcastItemState extends State<PodcastItem> {
     );
   }
 
-  String _formatDuration(Duration duration) {
-  String twoDigits(int n) => n.toString().padLeft(2, "0");
-  
-  // Для длительности более часа показываем часы
-  if (duration.inHours > 0) {
-    return "${duration.inHours}:${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
+  String _formatDuration(Duration? duration) {
+    if (duration == null) return "--:--";
+    
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    
+    // Для длительности более часа показываем часы
+    if (duration.inHours > 0) {
+      return "${duration.inHours}:${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
+    }
+    // Для менее часа показываем только минуты и секунды
+    else {
+      return "${twoDigits(duration.inMinutes)}:${twoDigits(duration.inSeconds.remainder(60))}";
+    }
   }
-  // Для менее часа показываем только минуты и секунды
-  else {
-    return "${twoDigits(duration.inMinutes)}:${twoDigits(duration.inSeconds.remainder(60))}";
+
+  Duration? _getActualDuration() {
+    // 1. Проверяем кэшированную длительность из сервиса
+    if (_cachedDuration != null && _cachedDuration! > Duration.zero) {
+      return _cachedDuration;
+    }
+    
+    // 2. Проверяем длительность из виджета
+    if (widget.podcast.duration != null && widget.podcast.duration! > Duration.zero) {
+      return widget.podcast.duration;
+    }
+    
+    // 3. Возвращаем null если длительность неизвестна
+    return null;
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -155,21 +184,7 @@ class _PodcastItemState extends State<PodcastItem> {
     }
     
     final bool isPlaying = audioService.isPlayingPodcast(widget.podcast);
-  
-    // Получаем актуальную длительность из сервиса, если доступна
-    Duration actualDuration = widget.podcast.duration;
-      if (audioService.currentEpisode?.id == widget.podcast.id) {
-        final serviceDuration = audioService.currentEpisode?.duration;
-        if (serviceDuration != null && serviceDuration > Duration.zero) {
-          actualDuration = serviceDuration;
-        } else {
-          // Если в сервисе нет длительности, используем из репозитория
-          final repoPodcast = podcastRepo.getEpisodeById(widget.podcast.id);
-          if (repoPodcast != null && repoPodcast.duration > Duration.zero) {
-            actualDuration = repoPodcast.duration;
-          }
-        }
-    }
+    final Duration? actualDuration = _getActualDuration();
 
     return StreamBuilder<Duration>(
       stream: isPlaying ? audioService.positionStream : null,
@@ -180,7 +195,7 @@ class _PodcastItemState extends State<PodcastItem> {
           _currentPosition = snapshot.data!;
         }
 
-        final progress = actualDuration.inMilliseconds > 0 
+        final progress = actualDuration?.inMilliseconds != null && actualDuration!.inMilliseconds > 0 
             ? _currentPosition.inMilliseconds / actualDuration.inMilliseconds 
             : 0.0;
 
@@ -280,12 +295,14 @@ class _PodcastItemState extends State<PodcastItem> {
                               _sliderValue = value;
                             });
                           },
-                          onChangeEnd: (value) {
-                            _seekPodcast(value, audioService);
-                            setState(() {
-                              _isSeeking = false;
-                            });
-                          },
+                          onChangeEnd: actualDuration != null && actualDuration.inMilliseconds > 0
+                            ? (value) {
+                                _seekPodcast(value, audioService);
+                                setState(() {
+                                  _isSeeking = false;
+                                });
+                              }
+                            : null,
                         ),
                       ),
                     ),

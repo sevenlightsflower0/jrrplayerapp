@@ -282,7 +282,7 @@ class AudioPlayerService with ChangeNotifier {
 
   // ==================== Background Audio Methods ====================
 
-  void _updateBackgroundAudioMetadata(AudioMetadata metadata) { // Исправлено: метод теперь существует
+  void _updateBackgroundAudioMetadata(AudioMetadata metadata) {
     if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
       (_audioHandler as AudioPlayerHandler).updateMetadata(metadata);
     }
@@ -290,6 +290,21 @@ class AudioPlayerService with ChangeNotifier {
 
   // ==================== Web Metadata Handling ====================
      
+  void updateMetadata(AudioMetadata newMetadata) {
+    debugPrint('Updating metadata: ${newMetadata.title}');
+    
+    if (_currentMetadata == null || _currentMetadata != newMetadata) {
+      _currentMetadata = newMetadata;
+      debugPrint('Metadata updated: ${newMetadata.title}');
+      
+      // Обновляем метаданные в background audio
+      _updateBackgroundAudioMetadata(newMetadata);
+      
+      _notifyListeners();
+    }
+  }
+  
+
   void _updateWebMetadataPolling() {
     if (!kIsWeb || _isPodcastMode) {
       _stopWebMetadataPolling();
@@ -420,20 +435,6 @@ class AudioPlayerService with ChangeNotifier {
       _podcastRepository?.updateEpisodeDuration(_currentEpisode!.id, duration);
       
       notifyListeners();
-    }
-  }
-
-  void updateMetadata(AudioMetadata newMetadata) {
-    debugPrint('Updating metadata: ${newMetadata.title}');
-    
-    if (_currentMetadata == null || _currentMetadata != newMetadata) {
-      _currentMetadata = newMetadata;
-      debugPrint('Metadata updated: ${newMetadata.title}');
-      
-      // Обновляем метаданные в background audio
-      _updateBackgroundAudioMetadata(newMetadata);
-      
-      _notifyListeners();
     }
   }
 
@@ -818,6 +819,50 @@ class AudioPlayerService with ChangeNotifier {
       developer.log('Error playing podcast', error: e, stackTrace: stackTrace);
       _notifyListeners();
       rethrow;
+    }
+  }
+
+    // Добавьте эти методы в класс AudioPlayerService
+
+  Future<void> playNextPodcast() async {
+    if (!_isPodcastMode || _currentEpisode == null || _podcastRepository == null) {
+      debugPrint('Cannot play next: not in podcast mode or no repository');
+      return;
+    }
+
+    try {
+      final nextEpisode = await _podcastRepository!.getNextEpisode(_currentEpisode!);
+      if (nextEpisode != null) {
+        debugPrint('Playing next podcast: ${nextEpisode.title}');
+        await playPodcast(nextEpisode);
+      } else {
+        debugPrint('No next episode available');
+        // Если это последний эпизод, остановить воспроизведение
+        await stopPodcast();
+      }
+    } catch (e) {
+      debugPrint('Error playing next podcast: $e');
+    }
+  }
+
+  Future<void> playPreviousPodcast() async {
+    if (!_isPodcastMode || _currentEpisode == null || _podcastRepository == null) {
+      debugPrint('Cannot play previous: not in podcast mode or no repository');
+      return;
+    }
+
+    try {
+      final previousEpisode = await _podcastRepository!.getPreviousEpisode(_currentEpisode!);
+      if (previousEpisode != null) {
+        debugPrint('Playing previous podcast: ${previousEpisode.title}');
+        await playPodcast(previousEpisode);
+      } else {
+        debugPrint('No previous episode available');
+        // Если это первый эпизод, перейти к началу
+        await seekPodcast(Duration.zero);
+      }
+    } catch (e) {
+      debugPrint('Error playing previous podcast: $e');
     }
   }
 

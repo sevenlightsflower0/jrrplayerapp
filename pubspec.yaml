@@ -1,5 +1,5 @@
 name: jrrplayerapp
-description: JRock Radio iOS App
+description: J-Rock Radio iOS App
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.2
   audioplayers: ^5.2.1
-  audio_service: 0.18.18 # Обновим до последней версии
+  audio_service: 0.18.18
   audio_session: ^0.1.18
   just_audio: ^0.9.36
   just_audio_background: ^0.0.1-beta.17

@@ -3,7 +3,6 @@ import 'package:http/http.dart' as http;
 import 'package:jrrplayerapp/repositories/podcast_repository.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xml/xml.dart' as xml;
 import 'package:jrrplayerapp/models/podcast.dart';
 import 'package:jrrplayerapp/widgets/podcast_item.dart';
@@ -38,6 +37,7 @@ List<PodcastEpisode> _parseRssInBackground(String responseBody) {
         final descriptionElement = item.findElements('description').firstOrNull;
         final durationElement = item.findElements('itunes:duration').firstOrNull;
         final guidElement = item.findElements('guid').firstOrNull;
+        final pubDateElement = item.findElements('pubDate').firstOrNull;
 
         if (titleElement == null || enclosureElement == null) {
           debugPrint('Skipping item - missing title or enclosure');
@@ -57,6 +57,25 @@ List<PodcastEpisode> _parseRssInBackground(String responseBody) {
         final guid = guidElement?.innerText.trim() ?? '${podcasts.length}';
         
         final duration = _parseDuration(durationString);
+        
+        // Парсим дату публикации
+        DateTime publishedDate = DateTime.now();
+        if (pubDateElement != null) {
+          try {
+            publishedDate = DateTime.parse(pubDateElement.innerText.trim());
+          } catch (e) {
+            try {
+              // Пробуем другие форматы даты
+              final dateString = pubDateElement.innerText.trim();
+              if (dateString.contains(',')) {
+                // Формат: "Wed, 15 Nov 2023 12:00:00 GMT"
+                publishedDate = _parseRssDate(dateString);
+              }
+            } catch (e2) {
+              debugPrint('Failed to parse date: $e2');
+            }
+          }
+        }
 
         podcasts.add(PodcastEpisode(
           id: guid,
@@ -66,10 +85,12 @@ List<PodcastEpisode> _parseRssInBackground(String responseBody) {
           channelImageUrl: null,
           description: description,
           duration: duration,
-          currentPosition: Duration.zero,
+          publishedDate: publishedDate,
+          channelId: 'jrr_podcast_channel', // ID канала по умолчанию
+          channelTitle: 'J-Rock Radio Podcasts',
         ));
         
-        debugPrint('Added podcast: $title');
+        debugPrint('Added podcast: $title (${publishedDate.toIso8601String()})');
       } catch (e) {
         debugPrint('Error parsing item: $e');
         continue;
@@ -81,6 +102,36 @@ List<PodcastEpisode> _parseRssInBackground(String responseBody) {
     debugPrint('Error parsing RSS: $e');
     return [];
   }
+}
+
+DateTime _parseRssDate(String dateString) {
+  try {
+    // Простая попытка разобрать RSS дату
+    final parts = dateString.split(' ');
+    if (parts.length >= 5) {
+      final day = int.tryParse(parts[1]) ?? 1;
+      final month = _parseMonth(parts[2]);
+      final year = int.tryParse(parts[3]) ?? DateTime.now().year;
+      
+      final timeParts = parts[4].split(':');
+      final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
+      final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
+      final second = timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
+      
+      return DateTime(year, month, day, hour, minute, second);
+    }
+  } catch (e) {
+    debugPrint('Failed to parse RSS date: $e');
+  }
+  return DateTime.now();
+}
+
+int _parseMonth(String month) {
+  const months = {
+    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+  };
+  return months[month] ?? 1;
 }
 
 Duration _parseDuration(String durationString) {
@@ -186,25 +237,17 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
 
         debugPrint('Parsed ${fetchedPodcasts.length} podcasts');
 
-        // Восстанавливаем позиции из SharedPreferences
-        final List<PodcastEpisode> podcastsWithPositions = [];
-        final prefs = await SharedPreferences.getInstance();
-        
-        for (var podcast in fetchedPodcasts) {
-          final positionMs = prefs.getInt('position_${podcast.id}') ?? 0;
-          podcastsWithPositions.add(podcast.copyWith(
-            currentPosition: Duration(milliseconds: positionMs),
-          ));
-        }
+        // Сортируем по дате публикации (новые первыми)
+        fetchedPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
 
         // ОБНОВЛЯЕМ РЕПОЗИТОРИЙ С ИСПОЛЬЗОВАНИЕМ Context
         if (mounted) {
           final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
-          podcastRepo.setEpisodes(podcastsWithPositions);
+          podcastRepo.setEpisodes(fetchedPodcasts);
         }
 
         setState(() {
-          podcasts = podcastsWithPositions;
+          podcasts = fetchedPodcasts;
           isLoading = false;
         });
       } else {

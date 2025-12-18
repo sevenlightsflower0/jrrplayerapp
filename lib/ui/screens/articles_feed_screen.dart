@@ -202,7 +202,7 @@ class _ArticlesFeedScreenState extends State<ArticlesFeedScreen> {
         url: url,
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('Ошибка парсинга статьи: $e');
+      debugPrint('Ошибка парсинга статьи: $e');
       return null;
     }
   }

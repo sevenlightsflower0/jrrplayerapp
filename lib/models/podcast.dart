@@ -1,66 +1,53 @@
 class PodcastEpisode {
   final String id;
   final String title;
+  final String description;
   final String audioUrl;
   final String? imageUrl;
   final String? channelImageUrl;
-  final String? description;
-  final Duration duration;
-  Duration currentPosition;
+  final DateTime publishedDate;
+  final Duration? duration;
+  final String channelId; // Добавьте это поле
+  final String channelTitle;
   
-  PodcastEpisode({
+  // Конструктор
+  const PodcastEpisode({
     required this.id,
     required this.title,
+    required this.description,
     required this.audioUrl,
     this.imageUrl,
     this.channelImageUrl,
-    this.description,
-    required this.duration,
-    this.currentPosition = Duration.zero,
+    required this.publishedDate,
+    this.duration,
+    required this.channelId, // Добавьте это
+    required this.channelTitle,
   });
-
-  // Конвертация в Map для сохранения
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'title': title,
-      'audioUrl': audioUrl,
-      'imageUrl': imageUrl,
-      'channelImageUrl': channelImageUrl,
-      'description': description,
-      'duration': duration.inMilliseconds,
-      'currentPosition': currentPosition.inMilliseconds,
-    };
-  }
-
-  // Создание из Map
-  factory PodcastEpisode.fromMap(Map<String, dynamic> map) {
-    return PodcastEpisode(
-      id: map['id'],
-      title: map['title'],
-      audioUrl: map['audioUrl'],
-      imageUrl: map['imageUrl'],
-      channelImageUrl: map['channelImageUrl'],
-      description: map['description'],
-      duration: Duration(milliseconds: map['duration'] ?? 0),
-      currentPosition: Duration(milliseconds: map['currentPosition'] ?? 0),
-    );
-  }
-
-  // Копирование с обновленными значениями
+  
+  // Метод copyWith
   PodcastEpisode copyWith({
-    Duration? currentPosition,
+    String? id,
+    String? title,
+    String? description,
+    String? audioUrl,
+    String? imageUrl,
+    String? channelImageUrl,
+    DateTime? publishedDate,
     Duration? duration,
+    String? channelId,
+    String? channelTitle,
   }) {
     return PodcastEpisode(
-      id: id,
-      title: title,
-      audioUrl: audioUrl,
-      imageUrl: imageUrl,
-      channelImageUrl: channelImageUrl,
-      description: description,
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      audioUrl: audioUrl ?? this.audioUrl,
+      imageUrl: imageUrl ?? this.imageUrl,
+      channelImageUrl: channelImageUrl ?? this.channelImageUrl,
+      publishedDate: publishedDate ?? this.publishedDate,
       duration: duration ?? this.duration,
-      currentPosition: currentPosition ?? this.currentPosition,
+      channelId: channelId ?? this.channelId,
+      channelTitle: channelTitle ?? this.channelTitle,
     );
   }
 }
