@@ -86,23 +86,11 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     }
   }
 
-  // Функция для определения типа устройства (маленький экран)
-  bool _isSmallScreen(BuildContext context) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    // iPhone SE имеет высоту 667 логических пикселей (без учета safe areas)
-    return screenHeight <= 700;
-  }
-
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final isSmallScreen = _isSmallScreen(context);
-    
-    // Адаптивные размеры для маленьких экранов
-    final buttonSize = isSmallScreen ? screenWidth * 0.08 : screenWidth * 0.10;
-    final socialButtonsMargin = isSmallScreen ? 2.0 : 4.0;
-    final radioButtonSize = isSmallScreen ? screenWidth * 0.4 : screenWidth * 0.5;
+    final buttonSize = screenWidth * 0.10;
+    final totalButtonsWidth = buttonSize * 5;
 
     final bool showAppBar = kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
 
@@ -141,71 +129,60 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           children: [
             // Три квадратные кнопки с SVG иконками
             Container(
-              margin: EdgeInsets.symmetric(vertical: socialButtonsMargin),
+              width: totalButtonsWidth,
+              margin: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _buildSocialButton('assets/icons/icon_vkontakte.svg', AppStrings.vkontakteUrl, buttonSize),
-                  SizedBox(width: isSmallScreen ? 12 : 16),
                   _buildSocialButton('assets/icons/icon_telegram.svg', AppStrings.telegramUrl, buttonSize),
-                  SizedBox(width: isSmallScreen ? 12 : 16),
                   _buildSocialButton('assets/icons/icon_wwweblink.svg', AppStrings.wwweblinkUrl, buttonSize),
                 ],
               ),
             ),
 
             // Круглая кнопка переключения на радио с анимацией волн
-            RadioButtonWithWaves(
-              screenWidth: screenWidth,
-              size: radioButtonSize,
-            ),
+            RadioButtonWithWaves(screenWidth: screenWidth),
             
-            // Проигрыватель - для маленьких экранов уменьшаем высоту
-            Container(
-              height: isSmallScreen ? 80 : 100,
-              margin: EdgeInsets.symmetric(vertical: isSmallScreen ? 4 : 8),
-              child: const Center(
+            // Проигрыватель
+            const Expanded(
+              flex: 1,
+              child: Center(
                 child: AudioPlayerWidget(),
               ),
             ),
 
-            // Кнопка для увеличения табов (скрываем на очень маленьких экранах)
-            if (!isSmallScreen || screenHeight > 600)
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const EnlargedTabsScreen()),
-                    );
-                  },
-                  child: const Text(AppStrings.enlargeTabsButton),
-                ),
-              ),
+            // Кнопка для увеличения табов
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const EnlargedTabsScreen()),
+        );
+              },
+              child: const Text(AppStrings.enlargeTabsButton),
+            ),
 
             // Нижняя половина экрана с табами (только если не показываем AppBar)
             if (!showAppBar) Expanded(
+              flex: 1,
               child: Column(
                 children: [
-                  // Таб-бар с уменьшенной высотой на маленьких экранах
-                  SizedBox(
-                    height: isSmallScreen ? 40 : 48,
-                    child: TabBar(
-                      controller: _tabController,
-                      tabs: const [
-                        Tab(text: AppStrings.articlesTab),
-                        Tab(text: AppStrings.newsTab),
-                        Tab(text: AppStrings.podcastsTab),
-                      ],
-                    ),
+                  // Таб-бар
+                  TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                      Tab(text: AppStrings.articlesTab),
+                      Tab(text: AppStrings.newsTab),
+                      Tab(text: AppStrings.podcastsTab),
+                    ],
                   ),
                   // Контент табов
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
                       children: const [
-                        ArticlesFeedScreen(),
+                        ArticlesFeedScreen(), // Заменяем на ленту новостей
                         NewsFeedScreen(),
                         PodcastListScreen(),
                       ],
@@ -217,10 +194,11 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             
             // Контент табов для случая с AppBar
             if (showAppBar) Expanded(
+              flex: 1,
               child: TabBarView(
                 controller: _tabController,
                 children: const [
-                  ArticlesFeedScreen(),
+                  ArticlesFeedScreen(), // Заменяем на ленту новостей
                   Center(child: Text(AppStrings.newsComingSoon)),
                   PodcastListScreen(),
                 ],
@@ -229,7 +207,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-      
+		
       bottomNavigationBar: Container(
         height: kBottomNavigationBarHeight,
         color: Colors.transparent,

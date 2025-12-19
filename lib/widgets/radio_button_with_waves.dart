@@ -6,12 +6,10 @@ import 'dart:math';
 
 class RadioButtonWithWaves extends StatelessWidget {
   final double screenWidth;
-  final double? size; // Добавляем параметр для кастомного размера
 
   const RadioButtonWithWaves({
     super.key,
     required this.screenWidth,
-    this.size,
   });
 
   @override
@@ -22,8 +20,7 @@ class RadioButtonWithWaves extends StatelessWidget {
         final bool isBuffering = audioService.isBuffering;
         final bool hasConnection = audioService.hasNetworkConnection ?? true;
         
-        // Используем customSize если передан, иначе используем screenWidth * 0.25
-        final double buttonSize = size ?? screenWidth * 0.25;
+        final double buttonSize = screenWidth * 0.25;
         
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 16),
@@ -103,7 +100,7 @@ class RadioButtonWithWaves extends StatelessWidget {
       // Первая волна (самая большая)
       _AnimatedWave(
         color: waveColor,
-        size: buttonSize * 1.5, // Увеличиваем множитель для лучшей видимости
+        size: buttonSize * 0.50,
         delay: 0,
         verticalOffset: -buttonSize * 0.15,
         isPlaying: isPlaying,
@@ -111,7 +108,7 @@ class RadioButtonWithWaves extends StatelessWidget {
       // Вторая волна
       _AnimatedWave(
         color: waveColor,
-        size: buttonSize * 1.2,
+        size: buttonSize * 0.30,
         delay: 500,
         verticalOffset: -buttonSize * 0.15,
         isPlaying: isPlaying,
@@ -119,7 +116,7 @@ class RadioButtonWithWaves extends StatelessWidget {
       // Третья волна
       _AnimatedWave(
         color: waveColor,
-        size: buttonSize * 0.9,
+        size: buttonSize * 0.10,
         delay: 1000,
         verticalOffset: -buttonSize * 0.15,
         isPlaying: isPlaying,
@@ -136,7 +133,6 @@ class RadioButtonWithWaves extends StatelessWidget {
   }
 }
 
-// Остальной код остается без изменений
 class _AnimatedWave extends StatefulWidget {
   final Color color;
   final double size;
