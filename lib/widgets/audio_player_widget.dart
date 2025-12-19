@@ -49,6 +49,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     debugPrint('🎵 Is podcast mode: ${_audioService.isPodcastMode}');
     debugPrint('🎵 AudioHandler available: ${_audioService.audioHandler != null}');
     
+     // Восстанавливаем состояние из сервиса при инициализации
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncPlayerState();
+    });
+
     _initializeNotifiers();
     _setupDurationSync();
       
@@ -60,7 +65,12 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     // Проверяем состояние каждые 500мс (на всякий случай)
     Timer.periodic(const Duration(milliseconds: 500), (timer) {
       if (mounted) {
-        _syncPlayerState();
+        // Только логируем, не обновляем UI каждый раз
+        final player = _audioService.getPlayer();
+        if (player != null && _playingNotifier.value != player.playing) {
+          debugPrint('State mismatch detected, syncing...');
+          _syncPlayerState();
+        }
       } else {
         timer.cancel();
       }
@@ -171,10 +181,20 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   void _syncPlayerState() {
     final player = _audioService.getPlayer();
     if (player != null) {
-      _playingNotifier.value = player.playing;
-      // Обновляем другие состояния при необходимости
+      final isPlaying = player.playing;
+      debugPrint('Syncing player state: playing=$isPlaying');
+      
+      // Обновляем все нотифаеры синхронно
+      _playingNotifier.value = isPlaying;
       _positionNotifier.value = player.position;
       _durationNotifier.value = player.duration;
+      
+      // Обновляем состояние UI
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          setState(() {});
+        });
+      }
     }
   }
 

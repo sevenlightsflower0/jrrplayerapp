@@ -868,16 +868,31 @@ class AudioPlayerService with ChangeNotifier {
 
   Future<void> pause() async {
     try {
-      debugPrint('Pausing playback');
       final player = getPlayer();
+      debugPrint('Pausing playback, player state: ${player?.playing}');
+      
       if (player != null && player.playing) {
+        // Сначала ставим на паузу, потом сохраняем позицию
         await player.pause();
-        await _saveCurrentPosition();
         
-        // Не вызываем _audioHandler?.pause() чтобы избежать цикла
-        // Вместо этого обновляем состояние через слушателей
-        _notifyListeners();
+        // Проверяем, действительно ли пауза сработала
+        if (player.playing) {
+          debugPrint('Warning: player still playing after pause, forcing stop');
+          await player.stop();
+        }
+        
+        await _saveCurrentPosition();
+        debugPrint('Playback paused successfully');
+      } else {
+        debugPrint('Player already paused or null');
       }
+      
+      // На Web: останавливаем опрос метаданных при паузе
+      if (kIsWeb && !_isPodcastMode) {
+        _stopWebMetadataPolling();
+      }
+      
+      _notifyListeners();
     } catch (e) {
       debugPrint('Error pausing playback: $e');
       // Не перебрасываем исключение, чтобы не блокировать UI
