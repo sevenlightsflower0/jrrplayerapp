@@ -158,14 +158,14 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const EnlargedTabsScreen()),
-        );
+                );
               },
               child: const Text(AppStrings.enlargeTabsButton),
             ),
 
             // Нижняя половина экрана с табами (только если не показываем AppBar)
             if (!showAppBar) Expanded(
-              flex: 1,
+              flex: 2, // Увеличиваем flex, чтобы табы занимали больше места
               child: Column(
                 children: [
                   // Таб-бар
@@ -177,12 +177,12 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                       Tab(text: AppStrings.podcastsTab),
                     ],
                   ),
-                  // Контент табов
+                  // Контент табов - занимает всё оставшееся пространство
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
                       children: const [
-                        ArticlesFeedScreen(), // Заменяем на ленту новостей
+                        ArticlesFeedScreen(),
                         NewsFeedScreen(),
                         PodcastListScreen(),
                       ],
@@ -194,11 +194,11 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             
             // Контент табов для случая с AppBar
             if (showAppBar) Expanded(
-              flex: 1,
+              flex: 2,
               child: TabBarView(
                 controller: _tabController,
                 children: const [
-                  ArticlesFeedScreen(), // Заменяем на ленту новостей
+                  ArticlesFeedScreen(),
                   Center(child: Text(AppStrings.newsComingSoon)),
                   PodcastListScreen(),
                 ],
@@ -207,11 +207,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-		
-      bottomNavigationBar: Container(
-        height: kBottomNavigationBarHeight,
-        color: Colors.transparent,
-      ),
+      // Убрана bottomNavigationBar для мобильных устройств
     );
   }
 
