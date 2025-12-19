@@ -872,17 +872,16 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('Pausing playback, player state: ${player?.playing}');
       
       if (player != null && player.playing) {
-        // Сначала ставим на паузу, потом сохраняем позицию
+        // Сначала останавливаем, потом пауза для гарантии
+        await player.stop();
         await player.pause();
-        
-        // Проверяем, действительно ли пауза сработала
-        if (player.playing) {
-          debugPrint('Warning: player still playing after pause, forcing stop');
-          await player.stop();
-        }
         
         await _saveCurrentPosition();
         debugPrint('Playback paused successfully');
+        
+        // Немедленно обновляем состояние
+        _playerState = PlayerState(false, player.processingState);
+        _isBuffering = false;
       } else {
         debugPrint('Player already paused or null');
       }
@@ -892,10 +891,12 @@ class AudioPlayerService with ChangeNotifier {
         _stopWebMetadataPolling();
       }
       
+      // Немедленно уведомляем слушателей
       _notifyListeners();
     } catch (e) {
       debugPrint('Error pausing playback: $e');
-      // Не перебрасываем исключение, чтобы не блокировать UI
+      // Даже при ошибке обновляем состояние
+      _notifyListeners();
     }
   }
 

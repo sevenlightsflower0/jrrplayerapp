@@ -149,8 +149,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   Future<void> _togglePlayPause() async {
     try {
       final player = _audioService.getPlayer();
-
-      if (_playingNotifier.value) {
+      
+      // Используем текущее состояние из notifier для принятия решения
+      final isCurrentlyPlaying = _playingNotifier.value;
+      
+      if (isCurrentlyPlaying) {
         // Если сейчас играет - ставим на паузу
         await _audioService.pause();
       } else {
@@ -164,10 +167,20 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         }
       }
 
-      // Принудительно обновляем состояние
+      // Сразу обновляем UI, не дожидаясь стрима
+      // Это важно для немедленной обратной связи
       if (mounted) {
-        // Обновляем notifier напрямую
-        _playingNotifier.value = player?.playing ?? false;
+        // Инвертируем текущее состояние
+        _playingNotifier.value = !isCurrentlyPlaying;
+        
+        // Принудительно обновляем состояние из плеера через 50мс
+        // для коррекции, если что-то пошло не так
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) {
+            _syncPlayerState();
+          }
+        });
+        
         setState(() {});
       }
     } catch (e) {
