@@ -869,14 +869,41 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> pause() async {
     try {
       final player = getPlayer();
-      debugPrint('Pausing playback, player state: ${player?.playing}');
+      debugPrint('Pausing playback, player state: ${player?.playing}, isPodcastMode: $_isPodcastMode');
       
       if (player != null && player.playing) {
-        // Сначала останавливаем, потом пауза для гарантии
-        await player.stop();
-        await player.pause();
+        // Для радио останавливаем полностью, для подкаста ставим на паузу
+        if (!_isPodcastMode) {
+          debugPrint('Stopping radio completely');
+          // Радио: останавливаем полностью
+          await player.stop();
+          await player.pause();
+          
+          // Останавливаем background audio
+          if (_audioHandler != null) {
+            await _audioHandler!.stop();
+          }
+          
+          // Останавливаем опрос метаданных для Web
+          if (kIsWeb) {
+            _stopWebMetadataPolling();
+          }
+          
+          // Сбрасываем метаданные радио
+          resetMetadata();
+          
+          // Обновляем состояние в background audio
+          _updateBackgroundAudioPlaybackState(false);
+        } else {
+          debugPrint('Pausing podcast');
+          // Подкаст: ставим на паузу и сохраняем позицию
+          await player.pause();
+          await _saveCurrentPosition();
+          
+          // Обновляем состояние в background audio
+          _updateBackgroundAudioPlaybackState(false);
+        }
         
-        await _saveCurrentPosition();
         debugPrint('Playback paused successfully');
         
         // Немедленно обновляем состояние
@@ -884,11 +911,6 @@ class AudioPlayerService with ChangeNotifier {
         _isBuffering = false;
       } else {
         debugPrint('Player already paused or null');
-      }
-      
-      // На Web: останавливаем опрос метаданных при паузе
-      if (kIsWeb && !_isPodcastMode) {
-        _stopWebMetadataPolling();
       }
       
       // Немедленно уведомляем слушателей
@@ -956,6 +978,40 @@ class AudioPlayerService with ChangeNotifier {
       _notifyListeners();
     } catch (e) {
       debugPrint('Error stopping podcast: $e');
+    }
+  }
+  
+  /// Специальный метод для остановки радио
+  Future<void> stopRadio() async {
+    try {
+      debugPrint('Stopping radio completely');
+      
+      final player = getPlayer();
+      if (player != null) {
+        await player.stop();
+        await player.pause();
+      }
+      
+      // Останавливаем background audio
+      if (_audioHandler != null) {
+        await _audioHandler!.stop();
+      }
+      
+      // Останавливаем таймер метаданных для Web
+      if (kIsWeb) {
+        _stopWebMetadataPolling();
+      }
+      
+      // Сбрасываем метаданные
+      resetMetadata();
+      
+      // Обновляем состояние в background audio
+      _updateBackgroundAudioPlaybackState(false);
+      
+      _notifyListeners();
+      debugPrint('Radio stopped successfully');
+    } catch (e) {
+      debugPrint('Error stopping radio: $e');
     }
   }
 

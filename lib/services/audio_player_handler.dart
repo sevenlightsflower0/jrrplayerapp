@@ -248,21 +248,27 @@ class AudioPlayerHandler extends BaseAudioHandler {
     if (_isHandlingControl) return;
     _isHandlingControl = true;
     
-    debugPrint('Background audio: pause called');
+    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // Ставим на паузу напрямую через player, а не через сервис
-      final player = audioPlayerService.getPlayer();
-      if (player != null && player.playing) {
-        await player.pause();
-        // Сохраняем позицию для подкастов
-        if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-          final position = player.position;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt(
-            'position_${audioPlayerService.currentEpisode!.id}', 
-            position.inMilliseconds
-          );
+      // Для радио останавливаем полностью, для подкаста - пауза
+      if (audioPlayerService.isPodcastMode) {
+        // Подкаст: ставим на паузу через player
+        final player = audioPlayerService.getPlayer();
+        if (player != null && player.playing) {
+          await player.pause();
+          // Сохраняем позицию для подкастов
+          if (audioPlayerService.currentEpisode != null) {
+            final position = player.position;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt(
+              'position_${audioPlayerService.currentEpisode!.id}', 
+              position.inMilliseconds
+            );
+          }
         }
+      } else {
+        // Радио: останавливаем полностью через сервис
+        await audioPlayerService.pause();
       }
     } catch (e) {
       debugPrint('Error in background pause: $e');
@@ -276,10 +282,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
     if (_isHandlingControl) return;
     _isHandlingControl = true;
     
-    debugPrint('Background audio: stop called');
+    debugPrint('Background audio: stop called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // Останавливаем через сервис, который сохранит позицию
-      await audioPlayerService.stopPodcast();
+      // Для радио и подкаста останавливаем через сервис
+      if (audioPlayerService.isPodcastMode) {
+        await audioPlayerService.stopPodcast();
+      } else {
+        // Для радио вызываем специальный метод остановки
+        await audioPlayerService.pause(); // pause уже останавливает радио
+      }
     } catch (e) {
       debugPrint('Error in background stop: $e');
     } finally {

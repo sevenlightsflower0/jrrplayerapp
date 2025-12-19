@@ -154,9 +154,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       final isCurrentlyPlaying = _playingNotifier.value;
       
       if (isCurrentlyPlaying) {
+        debugPrint('Toggling to PAUSE, mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
+        
         // Если сейчас играет - ставим на паузу
         await _audioService.pause();
+        
+        // Немедленно обновляем UI состояние
+        if (mounted) {
+          _playingNotifier.value = false;
+          setState(() {});
+        }
       } else {
+        debugPrint('Toggling to PLAY, mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
+        
         // Если на паузе - возобновляем воспроизведение
         if (_audioService.currentEpisode == null) {
           // Режим радио
@@ -165,29 +175,31 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
           // Режим подкаста
           await player?.play();
         }
+        
+        // Немедленно обновляем UI состояние
+        if (mounted) {
+          _playingNotifier.value = true;
+          setState(() {});
+        }
       }
 
-      // Сразу обновляем UI, не дожидаясь стрима
-      // Это важно для немедленной обратной связи
+      // Дополнительная синхронизация через 100мс
       if (mounted) {
-        // Инвертируем текущее состояние
-        _playingNotifier.value = !isCurrentlyPlaying;
-        
-        // Принудительно обновляем состояние из плеера через 50мс
-        // для коррекции, если что-то пошло не так
-        Future.delayed(const Duration(milliseconds: 50), () {
+        Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted) {
             _syncPlayerState();
           }
         });
-        
-        setState(() {});
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
+      // При ошибке все равно синхронизируем состояние
+      if (mounted) {
+        _syncPlayerState();
+      }
     }
   }
 
