@@ -221,7 +221,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     if (_isHandlingControl) return;
     _isHandlingControl = true;
     
-    debugPrint('Background audio: play called');
+    debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
       // ВОЗОБНОВЛЯЕМ воспроизведение через сервис
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
@@ -230,11 +230,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await player.play();
         }
       } else {
-        // Для радио: если уже играет, не перезапускаем
-        final player = audioPlayerService.getPlayer();
-        if (player == null || !player.playing) {
-          await audioPlayerService.playRadio();
-        }
+        // Для радио: ВСЕГДА перезапускаем, даже если плеер существует
+        // Это важно, потому что после паузы радио могло быть полностью остановлено
+        await audioPlayerService.playRadio();
       }
     } catch (e) {
       debugPrint('Error in background play: $e');

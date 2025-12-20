@@ -872,25 +872,11 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('Pausing playback, player state: ${player?.playing}, isPodcastMode: $_isPodcastMode');
       
       if (player != null && player.playing) {
-        // Для радио останавливаем полностью, для подкаста ставим на паузу
+        // Для радио просто ставим на паузу, для подкаста - пауза с сохранением позиции
         if (!_isPodcastMode) {
-          debugPrint('Stopping radio completely');
-          // Радио: останавливаем полностью
-          await player.stop();
+          debugPrint('Pausing radio (not stopping)');
+          // Радио: просто ставим на паузу
           await player.pause();
-          
-          // Останавливаем background audio
-          if (_audioHandler != null) {
-            await _audioHandler!.stop();
-          }
-          
-          // Останавливаем опрос метаданных для Web
-          if (kIsWeb) {
-            _stopWebMetadataPolling();
-          }
-          
-          // Сбрасываем метаданные радио
-          resetMetadata();
           
           // Обновляем состояние в background audio
           _updateBackgroundAudioPlaybackState(false);
