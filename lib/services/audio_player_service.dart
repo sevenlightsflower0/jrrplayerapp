@@ -678,24 +678,6 @@ class AudioPlayerService with ChangeNotifier {
       await initialize();
     }
 
-    // Если уже в режиме радио и плеер просто на паузе - возобновляем
-    if (!_isPodcastMode && _player != null && _player!.processingState != ProcessingState.idle) {
-      try {
-        debugPrint('Resuming paused radio');
-        await _player!.play();
-        
-        // Обновляем background audio
-        await _audioHandler?.play();
-        _updateBackgroundAudioPlaybackState(true);
-        
-        debugPrint('Radio resumed from pause');
-        _notifyListeners();
-        return;
-      } catch (e) {
-        debugPrint('Error resuming radio, will restart: $e');
-      }
-    }
-
     // Останавливаем таймер метаданных для Web
     if (kIsWeb) {
       _stopWebMetadataPolling();
@@ -725,7 +707,7 @@ class AudioPlayerService with ChangeNotifier {
     updateMetadata(initialMetadata);
 
     try {
-      // Останавливаем текущее воспроизведение
+      // Всегда останавливаем текущее воспроизведение перед запуском радио
       await _player?.stop();
 
       final audioSource = AudioSource.uri(
