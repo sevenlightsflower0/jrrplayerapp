@@ -2,7 +2,6 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
-import 'package:just_audio/just_audio.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
@@ -223,30 +222,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
       final player = audioPlayerService.getPlayer();
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        // Подкаст: просто возобновляем, если на паузе
+        // Подкаст: просто возобновляем
         if (player != null && !player.playing) {
           await player.play();
         }
       } else {
-        // Радио: проверяем состояние плеера
-        if (player != null) {
-          if (player.playing) {
-            // Уже играет — ничего не делаем
-            debugPrint('Radio already playing');
-          } else if (player.processingState == ProcessingState.ready ||
-                    player.processingState == ProcessingState.buffering) {
-            // Плеер на паузе или буферится — просто возобновляем
-            await player.play();
-            debugPrint('Resuming paused radio stream');
-          } else {
-            // Плеер в состоянии idle/completed или источник не установлен — полный запуск
-            await audioPlayerService.playRadio();
-            debugPrint('Starting radio from scratch');
-          }
-        } else {
-          // Плеер null — полный запуск
-          await audioPlayerService.playRadio();
-        }
+        // Радио: всегда используем playRadio()
+        await audioPlayerService.playRadio();
       }
     } catch (e) {
       debugPrint('Error in background play: $e');

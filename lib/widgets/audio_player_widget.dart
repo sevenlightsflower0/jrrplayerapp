@@ -153,38 +153,24 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   Future<void> _togglePlayPause() async {
     try {
       final player = _audioService.getPlayer();
-      
-      // Используем текущее состояние из сервиса для принятия решения
       final isCurrentlyPlaying = _audioService.isPlaying;
       
       debugPrint('🎵 Toggle play/pause called');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
       debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
-      debugPrint('🎵 Player state: ${player?.playing}');
+      
+      // НЕМЕДЛЕННО обновляем UI состояние
+      if (mounted) {
+        _playingNotifier.value = !isCurrentlyPlaying;
+        setState(() {});
+      }
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
-        
-        // НЕМЕДЛЕННО обновляем UI состояние - показываем паузу
-        if (mounted) {
-          _playingNotifier.value = false;
-          setState(() {});
-        }
-        
-        // Вызываем паузу в сервисе
-        await _audioService.pause();
-        
-        debugPrint('🎵 Pause completed');
+        await _audioService.pause(); // Используем общий метод паузы
       } else {
         debugPrint('🎵 Switching to PLAY');
         
-        // НЕМЕДЛЕННО обновляем UI состояние - показываем воспроизведение
-        if (mounted) {
-          _playingNotifier.value = true;
-          setState(() {});
-        }
-        
-        // Если сейчас на паузе - возобновляем воспроизведение
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
           // Режим подкаста
           debugPrint('🎵 Resuming podcast');
@@ -194,22 +180,13 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
           debugPrint('🎵 Starting/resuming radio');
           await _playRadio();
         }
-        
-        debugPrint('🎵 Play completed');
       }
-
-      // Дополнительная синхронизация через небольшой промежуток времени
-      if (mounted) {
-        Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) {
-            _syncPlayerState();
-          }
-        });
-      }
+      
+      debugPrint('🎵 Toggle completed');
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
       
-      // При ошибке все равно синхронизируем состояние
+      // При ошибке синхронизируем состояние
       if (mounted) {
         _syncPlayerState();
       }

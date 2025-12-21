@@ -963,14 +963,15 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('General pause called, isPodcastMode: $_isPodcastMode');
       
       if (player != null) {
-        // ВСЕГДА пытаемся поставить на паузу, даже если уже на паузе
+        // Для подкаста ставим на паузу и сохраняем позицию
         if (_isPodcastMode) {
           debugPrint('Pausing podcast');
           await player.pause();
           await _saveCurrentPosition();
         } else {
-          // Для радио используем pauseRadio
-          await pauseRadio();
+          // Для радио тоже ставим на паузу
+          debugPrint('Pausing radio');
+          await player.pause();
         }
         
         // Обновляем состояние в background audio
