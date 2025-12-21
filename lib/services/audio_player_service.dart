@@ -114,12 +114,14 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> stopFromNotification() async {
     try {
       debugPrint('Stopping from notification');
+      
+      // Устанавливаем флаг остановки
+      _isRadioStopped = true;
 
       // Останавливаем воспроизведение
       final player = getPlayer();
       if (player != null) {
         await player.stop();
-        await player.pause();
       }
 
       // Сбрасываем состояние
@@ -671,13 +673,74 @@ class AudioPlayerService with ChangeNotifier {
     debugPrint('Switched to radio mode');
   }
 
+  bool _isRadioStopped = false;
+
+  bool get isPlaying {
+    return _player?.playing == true;
+  }
+
+  bool get isRadioStopped {
+    return _isRadioStopped;
+  }
+
+  bool get isRadioPaused {
+    return !_isRadioStopped && _player?.playing == false;
+  }
+
+  Future<void> stopRadio() async {
+    try {
+      debugPrint('Stopping radio completely');
+      
+      final player = getPlayer();
+      if (player != null) {
+        await player.stop();
+        await player.pause();
+      }
+      
+      // Останавливаем background audio
+      if (_audioHandler != null) {
+        await _audioHandler!.stop();
+      }
+      
+      // Останавливаем таймер метаданных для Web
+      if (kIsWeb) {
+        _stopWebMetadataPolling();
+      }
+      
+      // Сбрасываем метаданные
+      resetMetadata();
+      
+      // Обновляем состояние в background audio
+      _updateBackgroundAudioPlaybackState(false);
+      
+      _notifyListeners();
+      debugPrint('Radio stopped successfully');
+    } catch (e) {
+      debugPrint('Error stopping radio: $e');
+    }
+  }
+  
   Future<void> playRadio() async {
-    debugPrint('playRadio called, current player state: ${_player?.playing}');
+    debugPrint('playRadio called, current player state: ${_player?.playing}, _isRadioStopped: $_isRadioStopped');
     
     if (!_isInitialized || _isDisposed || _player == null) {
       await initialize();
     }
 
+    // Если радио было остановлено, сбрасываем источник
+    if (_isRadioStopped) {
+      debugPrint('Radio was stopped, resetting audio source');
+      try {
+        await _player?.stop();
+        // Ждем немного для завершения stop
+        await Future.delayed(const Duration(milliseconds: 100));
+      } catch (e) {
+        debugPrint('Error during stop before play: $e');
+      }
+    }
+
+    _isRadioStopped = false; // Сбрасываем флаг остановки
+    
     // Останавливаем таймер метаданных для Web
     if (kIsWeb) {
       _stopWebMetadataPolling();
@@ -707,9 +770,7 @@ class AudioPlayerService with ChangeNotifier {
     updateMetadata(initialMetadata);
 
     try {
-      // Всегда останавливаем текущее воспроизведение перед запуском радио
-      await _player?.stop();
-
+      // Всегда создаем новый аудиоисточник
       final audioSource = AudioSource.uri(
         Uri.parse(AppStrings.livestreamUrl),
         tag: MediaItem(
@@ -736,6 +797,35 @@ class AudioPlayerService with ChangeNotifier {
       developer.log('Error playing radio', error: e, stackTrace: stackTrace);
       _notifyListeners();
       rethrow;
+    }
+  }
+
+  Future<void> pauseRadio() async {
+    try {
+      final player = getPlayer();
+      debugPrint('pauseRadio called, player state: ${player?.playing}');
+      
+      if (player != null && player.playing) {
+        // Просто ставим на паузу, НЕ останавливаем
+        await player.pause();
+        
+        // Обновляем состояние в background audio
+        _updateBackgroundAudioPlaybackState(false);
+        
+        debugPrint('Radio paused (not stopped)');
+        
+        // Обновляем состояние
+        _playerState = PlayerState(false, player.processingState);
+        _isBuffering = false;
+      } else {
+        debugPrint('Radio already paused or null');
+      }
+      
+      // Немедленно уведомляем слушателей
+      _notifyListeners();
+    } catch (e) {
+      debugPrint('Error pausing radio: $e');
+      _notifyListeners();
     }
   }
 
@@ -900,35 +990,6 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  Future<void> pauseRadio() async {
-    try {
-      final player = getPlayer();
-      debugPrint('pauseRadio called, player state: ${player?.playing}');
-      
-      if (player != null && player.playing) {
-        // Просто ставим на паузу, НЕ останавливаем
-        await player.pause();
-        
-        // Обновляем состояние в background audio
-        _updateBackgroundAudioPlaybackState(false);
-        
-        debugPrint('Radio paused (not stopped)');
-        
-        // Обновляем состояние
-        _playerState = PlayerState(false, player.processingState);
-        _isBuffering = false;
-      } else {
-        debugPrint('Radio already paused or null');
-      }
-      
-      // Немедленно уведомляем слушателей
-      _notifyListeners();
-    } catch (e) {
-      debugPrint('Error pausing radio: $e');
-      _notifyListeners();
-    }
-  }
-
   Future<void> _saveCurrentPosition([Duration? position]) async {
     if (_currentEpisode != null) {
       try {
@@ -985,40 +1046,6 @@ class AudioPlayerService with ChangeNotifier {
       _notifyListeners();
     } catch (e) {
       debugPrint('Error stopping podcast: $e');
-    }
-  }
-  
-  /// Специальный метод для остановки радио
-  Future<void> stopRadio() async {
-    try {
-      debugPrint('Stopping radio completely');
-      
-      final player = getPlayer();
-      if (player != null) {
-        await player.stop();
-        await player.pause();
-      }
-      
-      // Останавливаем background audio
-      if (_audioHandler != null) {
-        await _audioHandler!.stop();
-      }
-      
-      // Останавливаем таймер метаданных для Web
-      if (kIsWeb) {
-        _stopWebMetadataPolling();
-      }
-      
-      // Сбрасываем метаданные
-      resetMetadata();
-      
-      // Обновляем состояние в background audio
-      _updateBackgroundAudioPlaybackState(false);
-      
-      _notifyListeners();
-      debugPrint('Radio stopped successfully');
-    } catch (e) {
-      debugPrint('Error stopping radio: $e');
     }
   }
 
