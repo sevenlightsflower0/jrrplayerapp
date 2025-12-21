@@ -672,10 +672,28 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   Future<void> playRadio() async {
-    debugPrint('playRadio called');
+    debugPrint('playRadio called, current player state: ${_player?.playing}');
     
     if (!_isInitialized || _isDisposed || _player == null) {
       await initialize();
+    }
+
+    // Если уже в режиме радио и плеер просто на паузе - возобновляем
+    if (!_isPodcastMode && _player != null && _player!.processingState != ProcessingState.idle) {
+      try {
+        debugPrint('Resuming paused radio');
+        await _player!.play();
+        
+        // Обновляем background audio
+        await _audioHandler?.play();
+        _updateBackgroundAudioPlaybackState(true);
+        
+        debugPrint('Radio resumed from pause');
+        _notifyListeners();
+        return;
+      } catch (e) {
+        debugPrint('Error resuming radio, will restart: $e');
+      }
     }
 
     // Останавливаем таймер метаданных для Web
@@ -698,7 +716,7 @@ class AudioPlayerService with ChangeNotifier {
     resetMetadata();
     
     // Устанавливаем начальные метаданные для радио
-    const initialMetadata = AudioMetadata( // Исправлено: добавлен const
+    const initialMetadata = AudioMetadata(
       title: 'J-Rock Radio',
       artist: 'Live Stream',
       album: 'Онлайн радио',
@@ -707,6 +725,7 @@ class AudioPlayerService with ChangeNotifier {
     updateMetadata(initialMetadata);
 
     try {
+      // Останавливаем текущее воспроизведение
       await _player?.stop();
 
       final audioSource = AudioSource.uri(
@@ -724,8 +743,9 @@ class AudioPlayerService with ChangeNotifier {
       await _player?.setAudioSource(audioSource);
       await _player?.play();
 
-      // Начинаем воспроизведение в background audio
+      // Обновляем background audio
       await _audioHandler?.play();
+      _updateBackgroundAudioPlaybackState(true);
       
       debugPrint('Radio playback started');
 
@@ -869,32 +889,23 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> pause() async {
     try {
       final player = getPlayer();
-      debugPrint('Pausing playback, player state: ${player?.playing}, isPodcastMode: $_isPodcastMode');
+      debugPrint('General pause called, isPodcastMode: $_isPodcastMode');
       
       if (player != null && player.playing) {
-        // Для радио просто ставим на паузу, для подкаста - пауза с сохранением позиции
-        if (!_isPodcastMode) {
-          debugPrint('Pausing radio (not stopping)');
-          // Радио: просто ставим на паузу
-          await player.pause();
-          
-          // Обновляем состояние в background audio
-          _updateBackgroundAudioPlaybackState(false);
-        } else {
+        // Для подкаста - пауза с сохранением позиции
+        if (_isPodcastMode) {
           debugPrint('Pausing podcast');
-          // Подкаст: ставим на паузу и сохраняем позицию
           await player.pause();
           await _saveCurrentPosition();
-          
-          // Обновляем состояние в background audio
-          _updateBackgroundAudioPlaybackState(false);
+        } else {
+          // Для радио используем новый метод
+          await pauseRadio();
         }
         
-        debugPrint('Playback paused successfully');
+        // Обновляем состояние в background audio
+        _updateBackgroundAudioPlaybackState(false);
         
-        // Немедленно обновляем состояние
-        _playerState = PlayerState(false, player.processingState);
-        _isBuffering = false;
+        debugPrint('Playback paused successfully');
       } else {
         debugPrint('Player already paused or null');
       }
@@ -902,8 +913,36 @@ class AudioPlayerService with ChangeNotifier {
       // Немедленно уведомляем слушателей
       _notifyListeners();
     } catch (e) {
-      debugPrint('Error pausing playback: $e');
-      // Даже при ошибке обновляем состояние
+      debugPrint('Error in pause: $e');
+      _notifyListeners();
+    }
+  }
+
+  Future<void> pauseRadio() async {
+    try {
+      final player = getPlayer();
+      debugPrint('pauseRadio called, player state: ${player?.playing}');
+      
+      if (player != null && player.playing) {
+        // Просто ставим на паузу, НЕ останавливаем
+        await player.pause();
+        
+        // Обновляем состояние в background audio
+        _updateBackgroundAudioPlaybackState(false);
+        
+        debugPrint('Radio paused (not stopped)');
+        
+        // Обновляем состояние
+        _playerState = PlayerState(false, player.processingState);
+        _isBuffering = false;
+      } else {
+        debugPrint('Radio already paused or null');
+      }
+      
+      // Немедленно уведомляем слушателей
+      _notifyListeners();
+    } catch (e) {
+      debugPrint('Error pausing radio: $e');
       _notifyListeners();
     }
   }

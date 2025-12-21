@@ -223,19 +223,41 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // ВОЗОБНОВЛЯЕМ воспроизведение через сервис
+      final player = audioPlayerService.getPlayer();
+      
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        final player = audioPlayerService.getPlayer();
+        // Для подкаста
         if (player != null && !player.playing) {
           await player.play();
         }
       } else {
-        // Для радио: ВСЕГДА перезапускаем, даже если плеер существует
-        // Это важно, потому что после паузы радио могло быть полностью остановлено
-        await audioPlayerService.playRadio();
+        // Для радио: ВАЖНОЕ ИЗМЕНЕНИЕ
+        // Проверяем, нужно ли просто возобновить или перезапустить
+        if (player != null) {
+          // Если плеер уже существует и загружен
+          if (player.playing) {
+            debugPrint('Radio already playing, ignoring play command');
+          } else {
+            // Пытаемся просто возобновить
+            try {
+              await player.play();
+              debugPrint('Resumed existing radio player');
+            } catch (e) {
+              debugPrint('Failed to resume radio, restarting: $e');
+              await audioPlayerService.playRadio();
+            }
+          }
+        } else {
+          // Плеер не существует, запускаем заново
+          await audioPlayerService.playRadio();
+        }
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
+      // При ошибке пробуем перезапустить радио
+      if (!audioPlayerService.isPodcastMode) {
+        await audioPlayerService.playRadio();
+      }
     } finally {
       _isHandlingControl = false;
     }
@@ -248,13 +270,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // Для радио останавливаем полностью, для подкаста - пауза
+      // Для радио используем специальный метод pauseRadio вместо общего pause
       if (audioPlayerService.isPodcastMode) {
-        // Подкаст: ставим на паузу через player
         final player = audioPlayerService.getPlayer();
         if (player != null && player.playing) {
           await player.pause();
-          // Сохраняем позицию для подкастов
           if (audioPlayerService.currentEpisode != null) {
             final position = player.position;
             final prefs = await SharedPreferences.getInstance();
@@ -265,8 +285,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
           }
         }
       } else {
-        // Радио: останавливаем полностью через сервис
-        await audioPlayerService.pause();
+        // ВАЖНО: Для радио вызываем pauseRadio вместо pause
+        await audioPlayerService.pauseRadio();
       }
     } catch (e) {
       debugPrint('Error in background pause: $e');
@@ -286,8 +306,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.stopPodcast();
       } else {
-        // Для радио вызываем специальный метод остановки
-        await audioPlayerService.pause(); // pause уже останавливает радио
+        // Для радио останавливаем полностью
+        await audioPlayerService.stopRadio();
       }
     } catch (e) {
       debugPrint('Error in background stop: $e');
