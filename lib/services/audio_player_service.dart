@@ -805,9 +805,11 @@ class AudioPlayerService with ChangeNotifier {
       final player = getPlayer();
       debugPrint('pauseRadio called, player state: ${player?.playing}');
       
-      if (player != null && player.playing) {
+      if (player != null) {
         // Просто ставим на паузу, НЕ останавливаем
-        await player.pause();
+        if (player.playing) {
+          await player.pause();
+        }
         
         // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
@@ -818,10 +820,10 @@ class AudioPlayerService with ChangeNotifier {
         _playerState = PlayerState(false, player.processingState);
         _isBuffering = false;
       } else {
-        debugPrint('Radio already paused or null');
+        debugPrint('Player null in pauseRadio');
       }
       
-      // Немедленно уведомляем слушателей
+      // ВСЕГДА уведомляем слушателей, даже если уже на паузе
       _notifyListeners();
     } catch (e) {
       debugPrint('Error pausing radio: $e');
@@ -963,23 +965,25 @@ class AudioPlayerService with ChangeNotifier {
       final player = getPlayer();
       debugPrint('General pause called, isPodcastMode: $_isPodcastMode');
       
-      if (player != null && player.playing) {
+      if (player != null) {
         // Для подкаста - пауза с сохранением позиции
         if (_isPodcastMode) {
-          debugPrint('Pausing podcast');
-          await player.pause();
-          await _saveCurrentPosition();
+          if (player.playing) {
+            debugPrint('Pausing podcast');
+            await player.pause();
+            await _saveCurrentPosition();
+          }
         } else {
-          // Для радио используем новый метод
+          // Для радио используем pauseRadio
           await pauseRadio();
         }
         
-        // Обновляем состояние в background audio
+        // ВСЕГДА обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
         debugPrint('Playback paused successfully');
       } else {
-        debugPrint('Player already paused or null');
+        debugPrint('Player is null in pause()');
       }
       
       // Немедленно уведомляем слушателей

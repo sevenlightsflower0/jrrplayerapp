@@ -103,8 +103,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _onAudioServiceUpdate() {
-    // Игнорируем обновления, если мы сами вызвали управление
-    if (_isHandlingControl) return;
     
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
@@ -252,6 +250,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
+    } finally {
+      _isHandlingControl = false;
+    }
+  }
+
+  @override
+  Future<void> pause() async {
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
+    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+    try {
+      await audioPlayerService.pause();
+    } catch (e) {
+      debugPrint('Error in background pause: $e');
     } finally {
       _isHandlingControl = false;
     }
