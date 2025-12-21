@@ -806,24 +806,21 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('pauseRadio called, player state: ${player?.playing}');
       
       if (player != null) {
-        // Просто ставим на паузу, НЕ останавливаем
-        if (player.playing) {
-          await player.pause();
-        }
+        // ВСЕГДА пытаемся поставить на паузу
+        await player.pause();
         
         // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
-        debugPrint('Radio paused (not stopped)');
-        
-        // Обновляем состояние
+        // Обновляем локальное состояние
         _playerState = PlayerState(false, player.processingState);
         _isBuffering = false;
+        
+        debugPrint('Radio paused');
       } else {
         debugPrint('Player null in pauseRadio');
       }
       
-      // ВСЕГДА уведомляем слушателей, даже если уже на паузе
       _notifyListeners();
     } catch (e) {
       debugPrint('Error pausing radio: $e');
@@ -966,19 +963,17 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('General pause called, isPodcastMode: $_isPodcastMode');
       
       if (player != null) {
-        // Для подкаста - пауза с сохранением позиции
+        // ВСЕГДА пытаемся поставить на паузу, даже если уже на паузе
         if (_isPodcastMode) {
-          if (player.playing) {
-            debugPrint('Pausing podcast');
-            await player.pause();
-            await _saveCurrentPosition();
-          }
+          debugPrint('Pausing podcast');
+          await player.pause();
+          await _saveCurrentPosition();
         } else {
           // Для радио используем pauseRadio
           await pauseRadio();
         }
         
-        // ВСЕГДА обновляем состояние в background audio
+        // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
         debugPrint('Playback paused successfully');
