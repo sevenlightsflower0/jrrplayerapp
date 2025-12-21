@@ -200,9 +200,6 @@ class AudioPlayerService with ChangeNotifier {
           androidNotificationIcon: 'mipmap/ic_launcher',
           notificationColor: Colors.purple,
           androidShowNotificationBadge: true,
-          androidNotificationClickStartsActivity: true,
-          androidNotificationChannelDescription: 'J-Rock Radio player',
-          preloadArtwork: true,
         ),
       );
       _isBackgroundAudioInitialized = true;
@@ -210,6 +207,7 @@ class AudioPlayerService with ChangeNotifier {
     } catch (e, stackTrace) {
       developer.log('Error initializing background audio: $e', 
         error: e, stackTrace: stackTrace);
+
     }
   }
 
@@ -805,38 +803,25 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> pauseRadio() async {
     try {
       final player = getPlayer();
-      debugPrint('pauseRadio called, player state: ${player?.playing}, _isRadioStopped: $_isRadioStopped');
+      debugPrint('pauseRadio called, player state: ${player?.playing}');
       
-      if (player != null) {
-        if (player.playing) {
-          // Останавливаем воспроизведение
-          await player.stop();
-          await player.pause();
-          
-          // Устанавливаем состояние остановки
-          _isRadioStopped = true;
-          
-          // Останавливаем таймер метаданных для Web
-          if (kIsWeb) {
-            _stopWebMetadataPolling();
-          }
-          
-          debugPrint('Radio stopped successfully');
-        } else {
-          debugPrint('Radio already paused');
-        }
-        
-        // Обновляем состояние player
-        _playerState = PlayerState(false, ProcessingState.idle);
-        _isBuffering = false;
+      if (player != null && player.playing) {
+        // Просто ставим на паузу, НЕ останавливаем
+        await player.pause();
         
         // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
+        debugPrint('Radio paused (not stopped)');
+        
+        // Обновляем состояние
+        _playerState = PlayerState(false, player.processingState);
+        _isBuffering = false;
       } else {
-        debugPrint('Player is null in pauseRadio');
+        debugPrint('Radio already paused or null');
       }
       
+      // Немедленно уведомляем слушателей
       _notifyListeners();
     } catch (e) {
       debugPrint('Error pausing radio: $e');
@@ -978,15 +963,14 @@ class AudioPlayerService with ChangeNotifier {
       final player = getPlayer();
       debugPrint('General pause called, isPodcastMode: $_isPodcastMode');
       
-      if (player != null) {
+      if (player != null && player.playing) {
+        // Для подкаста - пауза с сохранением позиции
         if (_isPodcastMode) {
           debugPrint('Pausing podcast');
-          if (player.playing) {
-            await player.pause();
-            await _saveCurrentPosition();
-          }
+          await player.pause();
+          await _saveCurrentPosition();
         } else {
-          // Для радио используем pauseRadio
+          // Для радио используем новый метод
           await pauseRadio();
         }
         
@@ -995,9 +979,10 @@ class AudioPlayerService with ChangeNotifier {
         
         debugPrint('Playback paused successfully');
       } else {
-        debugPrint('Player is null');
+        debugPrint('Player already paused or null');
       }
       
+      // Немедленно уведомляем слушателей
       _notifyListeners();
     } catch (e) {
       debugPrint('Error in pause: $e');

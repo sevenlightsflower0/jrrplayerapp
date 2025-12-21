@@ -2,8 +2,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
-
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:just_audio/just_audio.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
@@ -223,51 +222,36 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
+      final player = audioPlayerService.getPlayer();
+      
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        // Для подкаста: возобновляем если на паузе
-        final player = audioPlayerService.getPlayer();
+        // Подкаст: просто возобновляем, если на паузе
         if (player != null && !player.playing) {
           await player.play();
         }
       } else {
-        // Для радио: ВСЕГДА запускаем радио через playRadio()
-        // Это важно, потому что после паузы радио могло быть остановлено
-        await audioPlayerService.playRadio();
+        // Радио: проверяем состояние плеера
+        if (player != null) {
+          if (player.playing) {
+            // Уже играет — ничего не делаем
+            debugPrint('Radio already playing');
+          } else if (player.processingState == ProcessingState.ready ||
+                    player.processingState == ProcessingState.buffering) {
+            // Плеер на паузе или буферится — просто возобновляем
+            await player.play();
+            debugPrint('Resuming paused radio stream');
+          } else {
+            // Плеер в состоянии idle/completed или источник не установлен — полный запуск
+            await audioPlayerService.playRadio();
+            debugPrint('Starting radio from scratch');
+          }
+        } else {
+          // Плеер null — полный запуск
+          await audioPlayerService.playRadio();
+        }
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
-    } finally {
-      _isHandlingControl = false;
-    }
-  }
-
-  @override
-  Future<void> pause() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-    try {
-      if (audioPlayerService.isPodcastMode) {
-        // Подкаст: ставим на паузу
-        final player = audioPlayerService.getPlayer();
-        if (player != null && player.playing) {
-          await player.pause();
-          if (audioPlayerService.currentEpisode != null) {
-            final position = player.position;
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setInt(
-              'position_${audioPlayerService.currentEpisode!.id}', 
-              position.inMilliseconds
-            );
-          }
-        }
-      } else {
-        // Радио: используем специальный метод pauseRadio
-        await audioPlayerService.pauseRadio();
-      }
-    } catch (e) {
-      debugPrint('Error in background pause: $e');
     } finally {
       _isHandlingControl = false;
     }
