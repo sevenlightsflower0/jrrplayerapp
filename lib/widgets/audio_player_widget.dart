@@ -128,13 +128,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Future<void> _togglePlayPause() async {
-    // ВРЕМЕННО КОММЕНТИРУЕМ ПРОВЕРКУ
-    // if (_isToggling) {
-    //   debugPrint('🎵 Already toggling, skipping');
-    //   return;
-    // }
+    // Правильная проверка - только если уже выполняется
+    if (_isToggling) {
+      debugPrint('🎵 Already toggling, skipping');
+      return;
+    }
     
     _isToggling = true;
+    debugPrint('🎵 _isToggling set to true');
     
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
@@ -167,8 +168,9 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       _syncPlayerState();
       
       debugPrint('🎵 Toggle completed');
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('🎵 Error in toggle play/pause: $e');
+      debugPrint('🎵 Stack trace: $stackTrace');
       
       // При ошибке синхронизируем состояние
       if (mounted) {
@@ -180,6 +182,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         SnackBar(content: Text('Error: $e')),
       );
     } finally {
+      // ВСЕГДА сбрасываем флаг
       _isToggling = false;
       debugPrint('🎵 _isToggling set to false');
     }
