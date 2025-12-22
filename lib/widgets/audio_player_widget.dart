@@ -151,50 +151,39 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Future<void> _togglePlayPause() async {
+    if (_isToggling) return;
+    _isToggling = true;
+
     try {
       final player = _audioService.getPlayer();
-      final isCurrentlyPlaying = _audioService.isPlaying;
-      
-      debugPrint('🎵 Toggle play/pause called');
-      debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
-      debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
-      
-      // НЕМЕДЛЕННО обновляем UI состояние
-      if (mounted) {
-        _playingNotifier.value = !isCurrentlyPlaying;
-        setState(() {});
-      }
-      
+      final isCurrentlyPlaying = _audioService.isPlaying; // или player?.playing ?? false
+
+      debugPrint('🎵 Toggle play/pause: currently $isCurrentlyPlaying');
+
       if (isCurrentlyPlaying) {
-        debugPrint('🎵 Switching to PAUSE');
-        await _audioService.pause(); // Используем общий метод паузы
+        debugPrint('🎵 Pausing...');
+        await _audioService.pause(); // ← просто пауза
+        // UI обновится автоматически через _playingNotifier (он слушает playingStream)
       } else {
-        debugPrint('🎵 Switching to PLAY');
-        
+        debugPrint('🎵 Playing...');
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
-          // Режим подкаста
-          debugPrint('🎵 Resuming podcast');
           await player?.play();
         } else {
-          // Режим радио
-          debugPrint('🎵 Starting/resuming radio');
           await _playRadio();
         }
+        // UI обновится через поток
       }
-      
-      debugPrint('🎵 Toggle completed');
     } catch (e) {
-      debugPrint('🎵 Error in toggle play/pause: $e');
-      
-      // При ошибке синхронизируем состояние
+      debugPrint('🎵 Error in toggle: $e');
+      // При ошибке — принудительно синхронизируем
+      _syncPlayerState();
       if (mounted) {
-        _syncPlayerState();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
       }
-      
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+    } finally {
+      _isToggling = false;
     }
   }
 
