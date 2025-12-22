@@ -960,30 +960,27 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> pause() async {
     try {
       final player = getPlayer();
-      debugPrint('General pause called, isPodcastMode: $_isPodcastMode');
+      debugPrint('General pause called, isPodcastMode: $_isPodcastMode, playing: ${player?.playing}');
       
-      if (player != null) {
-        // Для подкаста ставим на паузу и сохраняем позицию
-        if (_isPodcastMode) {
-          debugPrint('Pausing podcast');
-          await player.pause();
-          await _saveCurrentPosition();
-        } else {
-          // Для радио тоже ставим на паузу
-          debugPrint('Pausing radio');
-          await player.pause();
-        }
+      if (player != null && player.playing) {
+        await player.pause();
         
-        // Обновляем состояние в background audio
+        // КРИТИЧНО: обновляем background playback state
         _updateBackgroundAudioPlaybackState(false);
         
-        debugPrint('Playback paused successfully');
+        if (_isPodcastMode) {
+          await _saveCurrentPosition();
+          debugPrint('Podcast paused and position saved');
+        } else {
+          debugPrint('Radio paused');
+          // Для радио можно дополнительно остановить буферизацию, если нужно
+          // но pause() уже достаточно
+        }
+        
+        _notifyListeners();
       } else {
-        debugPrint('Player is null in pause()');
+        debugPrint('Pause ignored: player not playing or null');
       }
-      
-      // Немедленно уведомляем слушателей
-      _notifyListeners();
     } catch (e) {
       debugPrint('Error in pause: $e');
       _notifyListeners();
