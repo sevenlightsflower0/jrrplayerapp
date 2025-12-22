@@ -152,28 +152,29 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Future<void> _togglePlayPause() async {
     try {
+      final player = _audioService.getPlayer();
       final isCurrentlyPlaying = _audioService.isPlaying;
       
       debugPrint('🎵 Toggle play/pause called');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
+      debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
       
-      // Отключаем кнопку на время операции
-      if (_isToggling) return;
-      _isToggling = true;
-      
-      // НЕ обновляем UI сразу - ждем фактического результата
-      // Вместо этого покажем состояние загрузки
+      // НЕМЕДЛЕННО обновляем UI состояние
+      if (mounted) {
+        _playingNotifier.value = !isCurrentlyPlaying;
+        setState(() {});
+      }
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
-        await _audioService.pause();
+        await _audioService.pause(); // Используем общий метод паузы
       } else {
         debugPrint('🎵 Switching to PLAY');
         
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
           // Режим подкаста
           debugPrint('🎵 Resuming podcast');
-          await _audioService.getPlayer()?.play();
+          await player?.play();
         } else {
           // Режим радио
           debugPrint('🎵 Starting/resuming radio');
@@ -181,25 +182,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         }
       }
       
-      // Даем плееру время на обновление состояния
-      await Future.delayed(const Duration(milliseconds: 100));
-      
-      // Синхронизируем состояние ПОСЛЕ операции
-      _syncPlayerState();
-      
       debugPrint('🎵 Toggle completed');
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
       
       // При ошибке синхронизируем состояние
-      _syncPlayerState();
+      if (mounted) {
+        _syncPlayerState();
+      }
       
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
-    } finally {
-      _isToggling = false;
     }
   }
 
