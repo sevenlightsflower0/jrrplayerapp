@@ -152,29 +152,28 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Future<void> _togglePlayPause() async {
     try {
-      final player = _audioService.getPlayer();
       final isCurrentlyPlaying = _audioService.isPlaying;
       
       debugPrint('🎵 Toggle play/pause called');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
-      debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
       
-      // НЕМЕДЛЕННО обновляем UI состояние
-      if (mounted) {
-        _playingNotifier.value = !isCurrentlyPlaying;
-        setState(() {});
-      }
+      // Отключаем кнопку на время операции
+      if (_isToggling) return;
+      _isToggling = true;
+      
+      // НЕ обновляем UI сразу - ждем фактического результата
+      // Вместо этого покажем состояние загрузки
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
-        await _audioService.pause(); // Используем общий метод паузы
+        await _audioService.pause();
       } else {
         debugPrint('🎵 Switching to PLAY');
         
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
           // Режим подкаста
           debugPrint('🎵 Resuming podcast');
-          await player?.play();
+          await _audioService.getPlayer()?.play();
         } else {
           // Режим радио
           debugPrint('🎵 Starting/resuming radio');
@@ -182,19 +181,25 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         }
       }
       
+      // Даем плееру время на обновление состояния
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Синхронизируем состояние ПОСЛЕ операции
+      _syncPlayerState();
+      
       debugPrint('🎵 Toggle completed');
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
       
       // При ошибке синхронизируем состояние
-      if (mounted) {
-        _syncPlayerState();
-      }
+      _syncPlayerState();
       
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
+    } finally {
+      _isToggling = false;
     }
   }
 
@@ -209,6 +214,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵   Playing: $isPlaying');
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
+
+      // Используем player.playing как источник истины
+      if (_playingNotifier.value != isPlaying) {
+        _playingNotifier.value = isPlaying;
+      }
       
       // Обновляем все нотифаеры только если значения изменились
       if (_playingNotifier.value != isPlaying) {
@@ -315,6 +325,18 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     ValueListenableBuilder<bool>(
                       valueListenable: _playingNotifier,
                       builder: (context, playing, __) {
+                        // Получаем фактическое состояние из сервиса как источник истины
+                        final actualPlaying = _audioService.isPlaying;
+                        
+                        // Синхронизируем, если есть расхождение
+                        if (playing != actualPlaying && !_isToggling) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              _playingNotifier.value = actualPlaying;
+                            }
+                          });
+                        }
+                        
                         return IconButton(
                           icon: Icon(
                             playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
