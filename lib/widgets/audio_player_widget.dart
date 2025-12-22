@@ -126,21 +126,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     setState(() {});
   }
 
-  Future<void> _playRadio() async {
-    try {
-      await _audioService.playRadio();
-      if (mounted) {
-        _syncPlayerState();
-        setState(() {});
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error playing radio: $e')),
-      );
-    }
-  }
-
   Future<void> _togglePlayPause() async {
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
@@ -151,7 +136,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       
       // НЕМЕДЛЕННО обновляем UI состояние
       if (mounted) {
-        // Обновляем notifier на противоположное значение
         _playingNotifier.value = !isCurrentlyPlaying;
         setState(() {});
       }
@@ -165,14 +149,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
           // Режим подкаста
           debugPrint('🎵 Resuming podcast');
-          final player = _audioService.getPlayer();
-          if (player != null && !player.playing) {
-            await player.play();
+          if (_audioService.currentEpisode != null) {
+            // Для подкаста используем метод playPodcast с текущим эпизодом
+            await _audioService.playPodcast(_audioService.currentEpisode!);
+          } else {
+            final player = _audioService.getPlayer();
+            if (player != null && !player.playing) {
+              await player.play();
+            }
           }
         } else {
-          // Режим радио
+          // Режим радио - ВАЖНО: используем playRadio() вместо play()
           debugPrint('🎵 Starting/resuming radio');
-          await _playRadio();
+          await _audioService.playRadio();
         }
       }
       
