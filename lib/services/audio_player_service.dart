@@ -687,12 +687,16 @@ class AudioPlayerService with ChangeNotifier {
     return _player?.playing == true;
   }
 
-  bool get isRadioStopped {
-    return _isRadioStopped;
+  bool get isRadioPlaying {
+    return !_isPodcastMode && !_isRadioStopped && (_player?.playing == true);
   }
 
   bool get isRadioPaused {
-    return !_isRadioStopped && _player?.playing == false;
+    return !_isPodcastMode && !_isRadioStopped && (_player?.playing == false);
+  }
+  
+  bool get isRadioStopped {
+    return _isRadioStopped;
   }
 
   Future<void> stopRadio() async {
@@ -740,6 +744,7 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('Radio was stopped, resetting audio source');
       try {
         await _player?.stop();
+        // Ждем немного для завершения stop
         await Future.delayed(const Duration(milliseconds: 100));
       } catch (e) {
         debugPrint('Error during stop before play: $e');
@@ -747,7 +752,62 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     _isRadioStopped = false; // Сбрасываем флаг остановки
-    // ... остальной код остается без изменений
+    
+    // Останавливаем таймер метаданных для Web
+    if (kIsWeb) {
+      _stopWebMetadataPolling();
+    }
+
+    // Сбрасываем ID операции для радио
+    _currentOperationId = null;
+    _lastWebTrackId = null;
+
+    // Если был подкаст, сохраняем позицию
+    if (_currentEpisode != null) {
+      await _saveCurrentPosition();
+      _isPodcastMode = false;
+      _currentEpisode = null;
+    }
+
+    // Сбрасываем метаданные
+    resetMetadata();
+    
+    // Устанавливаем начальные метаданные для радио
+    const initialMetadata = AudioMetadata(
+      title: 'J-Rock Radio',
+      artist: 'Live Stream',
+      album: 'Онлайн радио',
+      artUrl: 'https://jrradio.ru/images/logo512.png',
+    );
+    updateMetadata(initialMetadata);
+
+    try {
+      // Создаем аудиоисточник
+      final audioSource = AudioSource.uri(
+        Uri.parse(AppStrings.livestreamUrl),
+        tag: initialMetadata,
+      );
+
+      // Сначала устанавливаем источник
+      await _player?.setAudioSource(audioSource);
+      
+      // Потом начинаем воспроизведение
+      await _player?.play();
+
+      // Обновляем background audio
+      if (_audioHandler != null) {
+        await _audioHandler?.play();
+        _updateBackgroundAudioPlaybackState(true);
+      }
+      
+      debugPrint('Radio playback started successfully');
+
+      _notifyListeners();
+    } catch (e, stackTrace) {
+      developer.log('Error playing radio', error: e, stackTrace: stackTrace);
+      _notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> pauseRadio() async {
@@ -915,7 +975,7 @@ class AudioPlayerService with ChangeNotifier {
       if (player != null && player.playing) {
         await player.pause();
         
-        // КРИТИЧНО: обновляем background playback state
+        // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
         if (_isPodcastMode) {
@@ -923,7 +983,8 @@ class AudioPlayerService with ChangeNotifier {
           debugPrint('Podcast paused and position saved');
         } else {
           debugPrint('Radio paused');
-          // Для радио не сбрасываем флаг _isRadioStopped, чтобы можно было возобновить
+          // Для радио НЕ устанавливаем _isRadioStopped = true
+          // чтобы можно было возобновить воспроизведение
         }
         
         _notifyListeners();

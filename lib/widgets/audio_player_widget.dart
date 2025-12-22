@@ -133,12 +133,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵 Toggle play/pause called');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
       debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
+      debugPrint('🎵 Player state: ${_audioService.getPlayer()?.playing}');
       
-      // НЕМЕДЛЕННО обновляем UI состояние
-      if (mounted) {
-        _playingNotifier.value = !isCurrentlyPlaying;
-        setState(() {});
-      }
+      // Отключаем кнопку на время выполнения операции
+      if (_isToggling) return;
+      _isToggling = true;
+      
+      // НЕ обновляем UI сразу - ждем реального изменения состояния
+      // _playingNotifier.value = !isCurrentlyPlaying;
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
@@ -147,23 +149,22 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         debugPrint('🎵 Switching to PLAY');
         
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
-          // Режим подкаста
-          debugPrint('🎵 Resuming podcast');
-          if (_audioService.currentEpisode != null) {
-            // Для подкаста используем метод playPodcast с текущим эпизодом
-            await _audioService.playPodcast(_audioService.currentEpisode!);
-          } else {
-            final player = _audioService.getPlayer();
-            if (player != null && !player.playing) {
-              await player.play();
-            }
+          // Режим подкаста - возобновляем текущий эпизод
+          debugPrint('🎵 Resuming podcast: ${_audioService.currentEpisode?.title}');
+          final player = _audioService.getPlayer();
+          if (player != null) {
+            await player.play();
           }
         } else {
-          // Режим радио - ВАЖНО: используем playRadio() вместо play()
+          // Режим радио - всегда запускаем playRadio()
           debugPrint('🎵 Starting/resuming radio');
           await _audioService.playRadio();
         }
       }
+      
+      // Ждем немного и синхронизируем состояние
+      await Future.delayed(const Duration(milliseconds: 100));
+      _syncPlayerState();
       
       debugPrint('🎵 Toggle completed');
     } catch (e) {
@@ -178,6 +179,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
+    } finally {
+      _isToggling = false;
     }
   }
 
@@ -190,10 +193,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       
       debugPrint('🎵 Syncing player state:');
       debugPrint('🎵   Playing: $isPlaying');
+      debugPrint('🎵   Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
       
-      // Обновляем все нотифаеры только если значения изменились
+      // ВАЖНО: обновляем notifier только если значение действительно изменилось
       if (_playingNotifier.value != isPlaying) {
         _playingNotifier.value = isPlaying;
       }
@@ -204,6 +208,12 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       
       if (_durationNotifier.value != duration) {
         _durationNotifier.value = duration;
+      }
+      
+      // Обновляем метаданные
+      final newMetadata = _audioService.currentMetadata;
+      if (_metadataNotifier.value != newMetadata) {
+        _metadataNotifier.value = newMetadata;
       }
       
       // Обновляем UI только если действительно нужно
