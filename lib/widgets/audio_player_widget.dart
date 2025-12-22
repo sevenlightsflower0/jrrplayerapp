@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
+import 'package:jrrplayerapp/constants/strings.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:provider/provider.dart';
 
@@ -130,45 +131,50 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
       
-      debugPrint('🎵 Toggle play/pause called');
+      debugPrint('🎵 Toggle play/pause called - START');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
       debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
       debugPrint('🎵 Player state: ${_audioService.getPlayer()?.playing}');
+      debugPrint('🎵 Player processing state: ${_audioService.getPlayer()?.processingState}');
+      debugPrint('🎵 Is radio stopped: ${_audioService.isRadioStopped}');
       
-      // Отключаем кнопку на время выполнения операции
-      if (_isToggling) return;
+      if (_isToggling) {
+        debugPrint('🎵 Already toggling, skipping');
+        return;
+      }
       _isToggling = true;
       
-      // НЕ обновляем UI сразу - ждем реального изменения состояния
+      // ВАЖНО: Отключите эту строку, чтобы не мешать логике воспроизведения
       // _playingNotifier.value = !isCurrentlyPlaying;
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
-        await _audioService.pause(); // Используем общий метод паузы
+        await _audioService.pause();
       } else {
         debugPrint('🎵 Switching to PLAY');
         
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
-          // Режим подкаста - возобновляем текущий эпизод
           debugPrint('🎵 Resuming podcast: ${_audioService.currentEpisode?.title}');
           final player = _audioService.getPlayer();
           if (player != null) {
             await player.play();
           }
         } else {
-          // Режим радио - всегда запускаем playRadio()
           debugPrint('🎵 Starting/resuming radio');
+          
+          // Попробуем всегда запускать playRadio() для радио
           await _audioService.playRadio();
         }
       }
       
-      // Ждем немного и синхронизируем состояние
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Увеличим задержку для лучшей синхронизации
+      await Future.delayed(const Duration(milliseconds: 500));
       _syncPlayerState();
       
-      debugPrint('🎵 Toggle completed');
-    } catch (e) {
+      debugPrint('🎵 Toggle completed - END');
+    } catch (e, stackTrace) {
       debugPrint('🎵 Error in toggle play/pause: $e');
+      debugPrint('🎵 Stack trace: $stackTrace');
       
       // При ошибке синхронизируем состояние
       if (mounted) {
@@ -181,6 +187,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       );
     } finally {
       _isToggling = false;
+      debugPrint('🎵 Toggle finished, _isToggling set to false');
     }
   }
 
@@ -270,6 +277,49 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
 
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Большая видимая кнопка для тестирования
+          ElevatedButton(
+            onPressed: () async {
+              debugPrint('🎵 TEST BUTTON PRESSED');
+              await _togglePlayPause();
+            },
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _playingNotifier,
+              builder: (context, playing, __) {
+                return Text(
+                  playing ? 'PAUSE' : 'PLAY RADIO',
+                  style: const TextStyle(fontSize: 20),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Отображение состояния
+          Text(
+            'Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          Text(
+            'Playing: ${_playingNotifier.value}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          const Text(
+            'URL: ${AppStrings.livestreamUrl}',
+            style: TextStyle(color: Colors.white, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+  /*
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -530,6 +580,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       },
     );
   }
+  */
 
   Widget _buildCoverImage(AudioMetadata? metadata, int imageVersion) {
     String? imageUrl = _getImageUrl(metadata);

@@ -547,6 +547,22 @@ class AudioPlayerService with ChangeNotifier {
             album: 'J-Rock Radio',
             artUrl: _coverCache[cacheKey],
           );
+                  
+          // Создаем MediaItem для обновления тега
+          final mediaItem = MediaItem(
+            id: 'current_stream',
+            title: songTitle,
+            artist: artist,
+            album: 'J-Rock Radio',
+            artUri: _coverCache[cacheKey] != null ? Uri.parse(_coverCache[cacheKey]!) : null,
+          );
+          
+          // Обновляем тег в текущем источнике
+          final player = getPlayer();
+          if (player != null && player.playing) {
+            // К сожалению, мы не можем динамически изменить тег существующего источника
+            // Просто обновляем метаданные через сервис
+          }
           updateMetadata(cachedMetadata);
         } else {
           // Асинхронно загружаем обложку
@@ -742,58 +758,74 @@ class AudioPlayerService with ChangeNotifier {
 
   Future<void> playRadio() async {
     debugPrint('=== playRadio() START ===');
-    debugPrint('Player state before: ${_player?.playing}');
-    debugPrint('Is disposed: $_isDisposed');
-    debugPrint('Is initialized: $_isInitialized');
     
-    if (!_isInitialized || _isDisposed || _player == null) {
-      debugPrint('Initializing player...');
-      await initialize();
-    }
-
-    _isRadioStopped = false;
-    
-    // Останавливаем таймер метаданных для Web
-    if (kIsWeb) {
-      _stopWebMetadataPolling();
-    }
-
-    _currentOperationId = null;
-    _lastWebTrackId = null;
-
-    // Если был подкаст, сохраняем позицию
-    if (_currentEpisode != null) {
-      await _saveCurrentPosition();
-      _isPodcastMode = false;
-      _currentEpisode = null;
-    }
-
-    // Сбрасываем метаданные
-    resetMetadata();
-    
-    const initialMetadata = AudioMetadata(
-      title: 'J-Rock Radio',
-      artist: 'Live Stream',
-      album: 'Онлайн радио',
-      artUrl: 'https://jrradio.ru/images/logo512.png',
-    );
-    
-    updateMetadata(initialMetadata);
-    debugPrint('Metadata updated');
-
     try {
-      debugPrint('Creating audio source with URL: ${AppStrings.livestreamUrl}');
-      
-      // Проверяем, есть ли уже источник
-      final currentSource = _player?.audioSource;
-      if (currentSource != null) {
-        debugPrint('Stopping current source...');
-        await _player?.stop();
+      // Убедимся, что плеер инициализирован
+      if (!_isInitialized || _isDisposed || _player == null) {
+        debugPrint('Player not initialized, initializing...');
+        await initialize();
       }
       
+      // Сбросим состояние
+      _isRadioStopped = false;
+      _isPodcastMode = false;
+      
+      // Остановим таймер метаданных для Web
+      if (kIsWeb) {
+        _stopWebMetadataPolling();
+      }
+      
+      _currentOperationId = null;
+      _lastWebTrackId = null;
+      
+      // Если был подкаст, сохраняем позицию
+      if (_currentEpisode != null) {
+        await _saveCurrentPosition();
+        _currentEpisode = null;
+      }
+      
+      // Сбросим метаданные
+      resetMetadata();
+      
+      // Установим начальные метаданные
+      // Используем корректный URL для обложки для web
+      String defaultArtUrl;
+      if (kIsWeb) {
+        // Для web можно использовать relative path или внешний URL
+        defaultArtUrl = '/images/default_cover.png'; // Убедитесь что файл есть в папке web/images
+      } else {
+        defaultArtUrl = 'https://jrradio.ru/images/logo512.png';
+      }
+      
+      const mediaItem = MediaItem(
+        id: 'jrr_live_stream',
+        title: 'J-Rock Radio',
+        artist: 'Live Stream',
+        album: 'Онлайн радио',
+        artUri: null, //defaultArtUrl, 
+      );
+
+      // Установим начальные метаданные в сервисе
+      final initialMetadata = AudioMetadata(
+        title: mediaItem.title,
+        artist: mediaItem.artist!,
+        album: mediaItem.album,
+        artUrl: mediaItem.artUri?.toString(),
+      );
+      
+      updateMetadata(initialMetadata);
+      debugPrint('Metadata updated');
+      
+      // Полностью остановим плеер
+      debugPrint('Stopping current playback...');
+      await _player?.stop();
+      
+      debugPrint('Creating audio source with URL: ${AppStrings.livestreamUrl}');
+      
+      // Создадим аудио-источник с тегом MediaItem (ВАЖНО!)
       final audioSource = AudioSource.uri(
         Uri.parse(AppStrings.livestreamUrl),
-        tag: initialMetadata,
+        tag: mediaItem, // Используем MediaItem, а не AudioMetadata
       );
       
       debugPrint('Setting audio source...');
@@ -802,25 +834,26 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('Starting playback...');
       await _player?.play();
       
-      // Проверяем состояние через секунду
-      Future.delayed(const Duration(seconds: 1), () {
-        debugPrint('Player state after 1s: ${_player?.playing}');
-      });
+      // Запустим таймер метаданных для Web
+      if (kIsWeb) {
+        _startWebMetadataPolling();
+      }
       
-      // Обновляем background audio
+      // Обновим background audio
       if (_audioHandler != null) {
         debugPrint('Updating background audio...');
         await _audioHandler?.play();
         _updateBackgroundAudioPlaybackState(true);
       }
       
-      debugPrint('Radio playback attempted');
+      debugPrint('Radio playback started successfully');
       _notifyListeners();
       
     } catch (e, stackTrace) {
       debugPrint('=== ERROR in playRadio() ===');
       debugPrint('Error: $e');
       debugPrint('Stack trace: $stackTrace');
+      
       _notifyListeners();
       rethrow;
     }
@@ -856,6 +889,26 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
+  Future<void> toggleRadio() async {
+    debugPrint('toggleRadio called, isRadioPlaying: $isRadioPlaying, isRadioStopped: $isRadioStopped');
+    
+    if (isRadioStopped) {
+      // Радио было остановлено, запускаем заново
+      await playRadio();
+    } else if (isRadioPlaying) {
+      // Радио играет, ставим на паузу
+      await pauseRadio();
+    } else {
+      // Радио на паузе, возобновляем
+      final player = getPlayer();
+      if (player != null && player.processingState != ProcessingState.idle) {
+        await player.play();
+      } else {
+        await playRadio();
+      }
+    }
+  }
+
   Future<void> playPodcast(PodcastEpisode episode) async {
     debugPrint('playPodcast called: ${episode.title}');
     
@@ -880,10 +933,18 @@ class AudioPlayerService with ChangeNotifier {
     _currentEpisode = episode;
 
     try {
-      // Создаём метаданные для подкаста
-      final artUrl = episode.imageUrl ?? episode.channelImageUrl ?? 'https://jrradio.ru/images/logo512.png';
-      
-      // Создаём AudioMetadata
+      // Создаём MediaItem для подкаста (требуется just_audio_background)
+      final artUrl = episode.imageUrl ?? episode.channelImageUrl;
+      final mediaItem = MediaItem(
+        id: episode.id,
+        title: episode.title,
+        artist: 'J-Rock Radio',
+        album: 'Подкасты',
+        artUri: artUrl != null && artUrl.isNotEmpty ? Uri.parse(artUrl) : null,
+        duration: episode.duration,
+      );
+
+      // Создаём AudioMetadata для внутреннего использования
       final podcastMetadata = AudioMetadata(
         title: episode.title,
         artist: 'J-Rock Radio',
@@ -897,7 +958,7 @@ class AudioPlayerService with ChangeNotifier {
       // Обновляем метаданные в background audio
       _updateBackgroundAudioMetadata(podcastMetadata);
       
-      _notifyListeners(); // Уведомляем UI сразу
+      _notifyListeners();
 
       if (_currentOperationId != operationId) return;
 
@@ -908,16 +969,10 @@ class AudioPlayerService with ChangeNotifier {
 
       if (_currentOperationId != operationId) return;
 
+      // Используем MediaItem как тег
       final audioSource = AudioSource.uri(
         Uri.parse(episode.audioUrl),
-        tag: MediaItem(
-          id: episode.id,
-          title: episode.title,
-          artist: 'J-Rock Radio',
-          album: 'Подкасты',
-          artUri: Uri.parse(artUrl),
-          duration: episode.duration,
-        ),
+        tag: mediaItem, // Используем MediaItem
       );
 
       await _player?.setAudioSource(audioSource);
@@ -940,8 +995,6 @@ class AudioPlayerService with ChangeNotifier {
       rethrow;
     }
   }
-
-    // Добавьте эти методы в класс AudioPlayerService
 
   Future<void> playNextPodcast() async {
     if (!_isPodcastMode || _currentEpisode == null || _podcastRepository == null) {
