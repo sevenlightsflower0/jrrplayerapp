@@ -214,11 +214,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵   Playing: $isPlaying');
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
-
-      // Используем player.playing как источник истины
-      if (_playingNotifier.value != isPlaying) {
-        _playingNotifier.value = isPlaying;
-      }
       
       // Обновляем все нотифаеры только если значения изменились
       if (_playingNotifier.value != isPlaying) {
