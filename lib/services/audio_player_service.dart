@@ -230,29 +230,33 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     try {
-      debugPrint('Initializing AudioPlayerService...');
+      debugPrint('=== initialize() START ===');
       
       // Инициализируем background audio
       await _initializeBackgroundAudio();
       
-      // Инициализируем player сразу
+      // Создаем новый AudioPlayer
       _player = AudioPlayer()
         ..playerStateStream.listen((state) {
           _playerState = state;
           _isBuffering = state.processingState == ProcessingState.buffering;
-          // КЛЮЧЕВАЯ СТРОКА:
-          _updateWebMetadataPolling();   // <--- вот это
-          debugPrint('Player state: ${state.playing ? "playing" : "paused"}, buffering: $_isBuffering');
           
+          debugPrint('Player state changed: playing=${state.playing}, '
+                    'processing=${state.processingState}');
+          
+          // Уведомляем о ВСЕХ изменениях состояния
           _notifyListeners();
         })
         ..icyMetadataStream.listen((metadata) {
+          debugPrint('ICY Metadata received');
           _handleStreamMetadata(metadata);
         })
         ..sequenceStateStream.listen((sequenceState) {
+          debugPrint('Sequence state changed');
           _handleSequenceState(sequenceState);
         })
         ..processingStateStream.listen((state) {
+          debugPrint('Processing state: $state');
           if (state == ProcessingState.completed) {
             _handlePlaybackCompleted();
           }
@@ -261,23 +265,27 @@ class AudioPlayerService with ChangeNotifier {
           if (_isPodcastMode && _currentEpisode != null) {
             _saveCurrentPosition(position);
           }
+        })
+        ..playbackEventStream.listen((event) {
+          debugPrint('Playback event: ${event.processingState}');
         });
-
-      // Проверяем начальное состояние сети
-      _connectivityResult = await _connectivity.checkConnectivity();
       
-      _connectivity.onConnectivityChanged.listen((result) {
-        _handleNetworkChange(result);
-      });
+      // Настройка
+      await _player?.setLoopMode(LoopMode.off);
+      
+      _connectivityResult = await _connectivity.checkConnectivity();
+      _connectivity.onConnectivityChanged.listen(_handleNetworkChange);
 
       _isInitialized = true;
       _isDisposed = false;
       
-      debugPrint('AudioPlayerService initialized successfully');
+      debugPrint('=== initialize() END - Success ===');
       _notifyListeners();
       
     } catch (e, stackTrace) {
-      developer.log('Error initializing audio player: $e', error: e, stackTrace: stackTrace);
+      debugPrint('=== ERROR in initialize() ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack trace: $stackTrace');
       _isInitialized = false;
     }
   }
@@ -731,34 +739,25 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('Error stopping radio: $e');
     }
   }
-  
+
   Future<void> playRadio() async {
-    debugPrint('playRadio called, current player state: ${_player?.playing}, _isRadioStopped: $_isRadioStopped');
+    debugPrint('=== playRadio() START ===');
+    debugPrint('Player state before: ${_player?.playing}');
+    debugPrint('Is disposed: $_isDisposed');
+    debugPrint('Is initialized: $_isInitialized');
     
     if (!_isInitialized || _isDisposed || _player == null) {
+      debugPrint('Initializing player...');
       await initialize();
     }
 
-    // Если радио было остановлено, сбрасываем источник
-    if (_isRadioStopped) {
-      debugPrint('Radio was stopped, resetting audio source');
-      try {
-        await _player?.stop();
-        // Ждем немного для завершения stop
-        await Future.delayed(const Duration(milliseconds: 100));
-      } catch (e) {
-        debugPrint('Error during stop before play: $e');
-      }
-    }
-
-    _isRadioStopped = false; // Сбрасываем флаг остановки
+    _isRadioStopped = false;
     
     // Останавливаем таймер метаданных для Web
     if (kIsWeb) {
       _stopWebMetadataPolling();
     }
 
-    // Сбрасываем ID операции для радио
     _currentOperationId = null;
     _lastWebTrackId = null;
 
@@ -772,42 +771,61 @@ class AudioPlayerService with ChangeNotifier {
     // Сбрасываем метаданные
     resetMetadata();
     
-    // Устанавливаем начальные метаданные для радио
     const initialMetadata = AudioMetadata(
       title: 'J-Rock Radio',
       artist: 'Live Stream',
       album: 'Онлайн радио',
       artUrl: 'https://jrradio.ru/images/logo512.png',
     );
+    
     updateMetadata(initialMetadata);
+    debugPrint('Metadata updated');
 
     try {
-      // Создаем аудиоисточник
+      debugPrint('Creating audio source with URL: ${AppStrings.livestreamUrl}');
+      
+      // Проверяем, есть ли уже источник
+      final currentSource = _player?.audioSource;
+      if (currentSource != null) {
+        debugPrint('Stopping current source...');
+        await _player?.stop();
+      }
+      
       final audioSource = AudioSource.uri(
         Uri.parse(AppStrings.livestreamUrl),
         tag: initialMetadata,
       );
-
-      // Сначала устанавливаем источник
+      
+      debugPrint('Setting audio source...');
       await _player?.setAudioSource(audioSource);
       
-      // Потом начинаем воспроизведение
+      debugPrint('Starting playback...');
       await _player?.play();
-
+      
+      // Проверяем состояние через секунду
+      Future.delayed(const Duration(seconds: 1), () {
+        debugPrint('Player state after 1s: ${_player?.playing}');
+      });
+      
       // Обновляем background audio
       if (_audioHandler != null) {
+        debugPrint('Updating background audio...');
         await _audioHandler?.play();
         _updateBackgroundAudioPlaybackState(true);
       }
       
-      debugPrint('Radio playback started successfully');
-
+      debugPrint('Radio playback attempted');
       _notifyListeners();
+      
     } catch (e, stackTrace) {
-      developer.log('Error playing radio', error: e, stackTrace: stackTrace);
+      debugPrint('=== ERROR in playRadio() ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack trace: $stackTrace');
       _notifyListeners();
       rethrow;
     }
+    
+    debugPrint('=== playRadio() END ===');
   }
 
   Future<void> pauseRadio() async {
