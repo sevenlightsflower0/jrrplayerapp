@@ -760,94 +760,89 @@ class AudioPlayerService with ChangeNotifier {
     debugPrint('=== playRadio() START ===');
     
     try {
-      // Убедимся, что плеер инициализирован
       if (!_isInitialized || _isDisposed || _player == null) {
-        debugPrint('Player not initialized, initializing...');
+        debugPrint('Initializing player...');
         await initialize();
       }
-      
-      // Сбросим состояние
+
+      // Сбросим флаг остановки радио
       _isRadioStopped = false;
-      _isPodcastMode = false;
       
-      // Остановим таймер метаданных для Web
+      // Останавливаем таймер метаданных для Web
       if (kIsWeb) {
         _stopWebMetadataPolling();
       }
-      
+
       _currentOperationId = null;
       _lastWebTrackId = null;
-      
+
       // Если был подкаст, сохраняем позицию
       if (_currentEpisode != null) {
         await _saveCurrentPosition();
+        _isPodcastMode = false;
         _currentEpisode = null;
       }
-      
-      // Сбросим метаданные
+
+      // Сбрасываем метаданные
       resetMetadata();
       
-      // Установим начальные метаданные
-      // Используем корректный URL для обложки для web
-      String defaultArtUrl;
-      if (kIsWeb) {
-        // Для web можно использовать relative path или внешний URL
-        defaultArtUrl = '/images/default_cover.png'; // Убедитесь что файл есть в папке web/images
-      } else {
-        defaultArtUrl = 'https://jrradio.ru/images/logo512.png';
-      }
-      
-      const mediaItem = MediaItem(
+      // Создаем MediaItem для радио
+      final mediaItem = MediaItem(
         id: 'jrr_live_stream',
         title: 'J-Rock Radio',
         artist: 'Live Stream',
         album: 'Онлайн радио',
-        artUri: null, //defaultArtUrl, 
+        artUri: null,
       );
-
-      // Установим начальные метаданные в сервисе
+      
+      // Обновляем метаданные
       final initialMetadata = AudioMetadata(
         title: mediaItem.title,
         artist: mediaItem.artist!,
         album: mediaItem.album,
-        artUrl: mediaItem.artUri?.toString(),
+        artUrl: null,
       );
       
       updateMetadata(initialMetadata);
       debugPrint('Metadata updated');
-      
-      // Полностью остановим плеер
-      debugPrint('Stopping current playback...');
-      await _player?.stop();
-      
-      debugPrint('Creating audio source with URL: ${AppStrings.livestreamUrl}');
-      
-      // Создадим аудио-источник с тегом MediaItem (ВАЖНО!)
-      final audioSource = AudioSource.uri(
-        Uri.parse(AppStrings.livestreamUrl),
-        tag: mediaItem, // Используем MediaItem, а не AudioMetadata
-      );
-      
-      debugPrint('Setting audio source...');
-      await _player?.setAudioSource(audioSource);
-      
-      debugPrint('Starting playback...');
-      await _player?.play();
-      
-      // Запустим таймер метаданных для Web
-      if (kIsWeb) {
-        _startWebMetadataPolling();
+
+      try {
+        debugPrint('Creating audio source with URL: ${AppStrings.livestreamUrl}');
+        
+        // Создаем аудио-источник
+        final audioSource = AudioSource.uri(
+          Uri.parse(AppStrings.livestreamUrl),
+          tag: mediaItem,
+        );
+        
+        debugPrint('Setting audio source...');
+        await _player?.setAudioSource(audioSource);
+        
+        debugPrint('Starting playback...');
+        await _player?.play();
+        
+        debugPrint('Playback started successfully');
+        
+        // Запускаем таймер метаданных для Web
+        if (kIsWeb) {
+          _startWebMetadataPolling();
+        }
+        
+        // Обновляем background audio
+        if (_audioHandler != null) {
+          debugPrint('Updating background audio...');
+          await _audioHandler?.play();
+          _updateBackgroundAudioPlaybackState(true);
+        }
+        
+        debugPrint('Radio playback successful');
+        _notifyListeners();
+        
+      } catch (e, stackTrace) {
+        debugPrint('Error setting audio source: $e');
+        debugPrint('Stack trace: $stackTrace');
+        rethrow;
       }
-      
-      // Обновим background audio
-      if (_audioHandler != null) {
-        debugPrint('Updating background audio...');
-        await _audioHandler?.play();
-        _updateBackgroundAudioPlaybackState(true);
-      }
-      
-      debugPrint('Radio playback started successfully');
-      _notifyListeners();
       
     } catch (e, stackTrace) {
       debugPrint('=== ERROR in playRadio() ===');

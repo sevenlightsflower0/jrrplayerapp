@@ -128,24 +128,21 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Future<void> _togglePlayPause() async {
+    // ВРЕМЕННО КОММЕНТИРУЕМ ПРОВЕРКУ
+    // if (_isToggling) {
+    //   debugPrint('🎵 Already toggling, skipping');
+    //   return;
+    // }
+    
+    _isToggling = true;
+    
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
       
-      debugPrint('🎵 Toggle play/pause called - START');
+      debugPrint('🎵 Toggle play/pause called');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
       debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
       debugPrint('🎵 Player state: ${_audioService.getPlayer()?.playing}');
-      debugPrint('🎵 Player processing state: ${_audioService.getPlayer()?.processingState}');
-      debugPrint('🎵 Is radio stopped: ${_audioService.isRadioStopped}');
-      
-      if (_isToggling) {
-        debugPrint('🎵 Already toggling, skipping');
-        return;
-      }
-      _isToggling = true;
-      
-      // ВАЖНО: Отключите эту строку, чтобы не мешать логике воспроизведения
-      // _playingNotifier.value = !isCurrentlyPlaying;
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
@@ -161,20 +158,17 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
           }
         } else {
           debugPrint('🎵 Starting/resuming radio');
-          
-          // Попробуем всегда запускать playRadio() для радио
           await _audioService.playRadio();
         }
       }
       
-      // Увеличим задержку для лучшей синхронизации
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Ждем немного и синхронизируем состояние
+      await Future.delayed(const Duration(milliseconds: 300));
       _syncPlayerState();
       
-      debugPrint('🎵 Toggle completed - END');
-    } catch (e, stackTrace) {
+      debugPrint('🎵 Toggle completed');
+    } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
-      debugPrint('🎵 Stack trace: $stackTrace');
       
       // При ошибке синхронизируем состояние
       if (mounted) {
@@ -187,7 +181,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       );
     } finally {
       _isToggling = false;
-      debugPrint('🎵 Toggle finished, _isToggling set to false');
+      debugPrint('🎵 _isToggling set to false');
     }
   }
 
@@ -279,44 +273,278 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.black,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Большая видимая кнопка для тестирования
-          ElevatedButton(
-            onPressed: () async {
-              debugPrint('🎵 TEST BUTTON PRESSED');
-              await _togglePlayPause();
-            },
-            child: ValueListenableBuilder<bool>(
-              valueListenable: _playingNotifier,
-              builder: (context, playing, __) {
-                return Text(
-                  playing ? 'PAUSE' : 'PLAY RADIO',
-                  style: const TextStyle(fontSize: 20),
-                );
-              },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Адаптивные размеры в зависимости от доступного пространства
+        final bool isCompact = constraints.maxHeight < 400;
+        final double coverSize = isCompact ? 48.0 : 64.0;
+        final double iconSize = isCompact ? 40.0 : 50.0;
+        final double smallSpacing = isCompact ? 4.0 : 8.0;
+        final double mediumSpacing = isCompact ? 8.0 : 12.0;
+        final double largeSpacing = isCompact ? 12.0 : 16.0;
+
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: constraints.maxHeight,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Кнопки управления
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Кнопка "Предыдущий"
+                    IconButton(
+                      icon: const Icon(Icons.skip_previous, size: 30),
+                      onPressed: _audioService.isPodcastMode 
+                          ? _playPreviousPodcast
+                          : null, // Для радио можно сделать переключение станций
+                      color: _audioService.isPodcastMode ? Colors.white : Colors.grey,
+                    ),
+                    SizedBox(width: mediumSpacing),
+                    
+                    // Кнопка воспроизведения/паузы
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _playingNotifier,
+                      builder: (context, playing, __) {
+                        return IconButton(
+                          icon: Icon(
+                            playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                            size: iconSize,
+                          ),
+ /*
+                          onPressed: () async {
+                            // Отключаем кнопку на время выполнения операции
+                            if (_isToggling) return;
+                            _isToggling = true;
+                            
+                            try {
+                              await _togglePlayPause();
+                            } finally {
+                              _isToggling = false;
+                            }
+                          },
+*/
+                          onPressed: () async {
+                            debugPrint('🎵 Button pressed, _isToggling: $_isToggling');
+                            await _togglePlayPause();
+                },
+                          color: Colors.white,
+                        );
+                      },
+                    ),
+                    SizedBox(width: mediumSpacing),
+                    
+                    // Кнопка "Следующий"
+                    IconButton(
+                      icon: const Icon(Icons.skip_next, size: 30),
+                      onPressed: _audioService.isPodcastMode 
+                          ? _playNextPodcast
+                          : null, // Для радио можно сделать переключение станций
+                      color: _audioService.isPodcastMode ? AppColors.customWhite : Colors.grey,
+                    ),
+                  ],
+                ),
+                SizedBox(height: largeSpacing),
+
+                // Регулятор громкости с кнопками
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: largeSpacing),
+                  child: Row(
+                    children: [
+                      // Кнопка "Тише"
+                      IconButton(
+                        icon: const Icon(Icons.volume_down),
+                        onPressed: _decreaseVolume,
+                        color: AppColors.customWhite,
+                        iconSize: 24,
+                        tooltip: 'Тише',
+                      ),
+                      SizedBox(width: smallSpacing),
+                      
+                      // Ползунок громкости
+                      Expanded(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: _volumeNotifier,
+                          builder: (_, volume, __) {
+                            return Slider(
+                              value: volume,
+                              min: 0.0,
+                              max: 1.0,
+                              divisions: 10,
+                              onChanged: (value) {
+                                _volumeNotifier.value = value;
+                              },
+                              onChangeEnd: (value) {
+                                _setVolume(value);
+                              },
+                              activeColor: Theme.of(context).colorScheme.primary,
+                              inactiveColor: Colors.grey[700],
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(width: smallSpacing),
+                      
+                      // Кнопка "Громче"
+                      IconButton(
+                        icon: const Icon(Icons.volume_up),
+                        onPressed: _increaseVolume,
+                        color: AppColors.customWhite,
+                        iconSize: 24,
+                        tooltip: 'Громче',
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: largeSpacing),
+              
+                // Прогресс-бар (только для подкастов)
+                if (_audioService.isPodcastMode) ...[
+                  SizedBox(
+                    width: 300,
+                    child: Column(
+                      children: [
+                        ValueListenableBuilder2<Duration?, Duration?>(
+                          first: _positionNotifier,
+                          second: _durationNotifier,
+                          builder: (_, position, duration, __) {
+                            final pos = position ?? Duration.zero;
+                            final dur = duration ?? Duration.zero;
+                            final progress = dur.inMilliseconds > 0
+                                ? pos.inMilliseconds / dur.inMilliseconds
+                                : 0.0;
+
+                            return LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: AppColors.customWhiteTransp,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Theme.of(context).colorScheme.primary,
+                              ),
+                            );
+                          },
+                        ),
+                        SizedBox(height: smallSpacing),
+                        
+                        ValueListenableBuilder2<Duration?, Duration?>(
+                          first: _positionNotifier,
+                          second: _durationNotifier,
+                          builder: (_, position, duration, __) {
+                            final pos = position ?? Duration.zero;
+                            final dur = duration ?? Duration.zero;
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  _format(pos),
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                                Text(
+                                  _format(dur),
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                        // ВРЕМЕННО: Кнопка для отладки
+                        ElevatedButton(
+                          onPressed: () {
+                            debugPrint('=== RESET STATE ===');
+                            _isToggling = false;
+                            _syncPlayerState();
+                          },
+                          child: const Text('Reset State (Debug)'),
+                        ),
+
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: largeSpacing),
+                ],
+                
+                // Название трека с названием альбома
+                ValueListenableBuilder<AudioMetadata?>(
+                  valueListenable: _metadataNotifier,
+                  builder: (_, metadata, __) {
+                    String trackText = metadata?.title ?? 'J-Rock Radio';
+                    if (metadata?.album != null && metadata!.album!.isNotEmpty) {
+                      trackText = '${metadata.title} - ${metadata.album}';
+                    }
+                    
+                    return Padding(
+                      padding: EdgeInsets.symmetric(horizontal: largeSpacing),
+                      child: Text(
+                        trackText,
+                        style: TextStyle(
+                          fontSize: isCompact ? 12 : 14,
+                          color: AppColors.customWhite,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  },
+                ),
+                SizedBox(height: mediumSpacing),
+                
+                // Обложка альбома
+                ValueListenableBuilder<int>(
+                  valueListenable: _imageUpdateNotifier,
+                  builder: (_, imageVersion, __) {
+                    return ValueListenableBuilder<AudioMetadata?>(
+                      valueListenable: _metadataNotifier,
+                      builder: (_, metadata, __) {
+                        return Container(
+                          width: coverSize,
+                          height: coverSize,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: AppColors.customStyleShadow,
+                                blurRadius: 6,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: _buildCoverImage(metadata, imageVersion),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                SizedBox(height: mediumSpacing),
+                
+                // Исполнитель
+                ValueListenableBuilder<AudioMetadata?>(
+                  valueListenable: _metadataNotifier,
+                  builder: (_, metadata, __) {
+                    return Text(
+                      metadata?.artist ?? 'Live Stream',
+                      style: TextStyle(
+                        fontSize: isCompact ? 16 : 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.customWhite,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    );
+                  },
+                ),
+                
+                SizedBox(height: largeSpacing),
+              ],
             ),
           ),
-          const SizedBox(height: 20),
-          // Отображение состояния
-          Text(
-            'Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          Text(
-            'Playing: ${_playingNotifier.value}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          const Text(
-            'URL: ${AppStrings.livestreamUrl}',
-            style: TextStyle(color: Colors.white, fontSize: 10),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
   /*
