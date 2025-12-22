@@ -88,6 +88,14 @@ class AudioPlayerService with ChangeNotifier {
   AudioPlayer? getPlayer() {
     return _player;
   }
+  
+  Stream<double> getVolumeStream() {
+    return getPlayer()?.volumeStream ?? Stream.value(1.0);
+  }
+
+  double getVolume() {
+    return getPlayer()?.volume ?? 1.0;
+  }
 
   // Добавим эти методы управления громкостью
   Future<void> increaseVolume() async {

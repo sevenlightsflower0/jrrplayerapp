@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
-import 'dart:async';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:provider/provider.dart';
 
@@ -49,8 +50,9 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     debugPrint('🎵 Current episode: ${_audioService.currentEpisode?.title}');
     debugPrint('🎵 Is podcast mode: ${_audioService.isPodcastMode}');
     debugPrint('🎵 AudioHandler available: ${_audioService.audioHandler != null}');
+    debugPrint('🎵 Initial playing state: ${_audioService.isPlaying}');
     
-     // Восстанавливаем состояние из сервиса при инициализации
+    // Восстанавливаем состояние из сервиса при инициализации
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncPlayerState();
     });
@@ -58,46 +60,32 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     _initializeNotifiers();
     _setupDurationSync();
       
-    // Добавляем периодическую проверку состояния
-    _setupStateSync();    
+    // Подписываемся на изменения состояния плеера напрямую
+    _setupPlayerStateListener();
   }
 
-  void _setupStateSync() {
-    // Проверяем состояние каждые 500мс (на всякий случай)
-    Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      if (mounted) {
-        // Только логируем, не обновляем UI каждый раз
-        final player = _audioService.getPlayer();
-        if (player != null && _playingNotifier.value != player.playing) {
-          debugPrint('State mismatch detected, syncing...');
-          _syncPlayerState();
-        }
-      } else {
-        timer.cancel();
-      }
-    });
+  void _setupPlayerStateListener() {
+    final player = _audioService.getPlayer();
+    if (player != null) {
+      // Слушаем изменения состояния playing напрямую из плеера
+    }
   }
 
   void _initializeNotifiers() {
     final player = _audioService.getPlayer();
     debugPrint('🎵 Player state: playing=${player?.playing}, position=${player?.position}');
 
-    // Вместо player?.playingStream
-    _playingNotifier = _StreamValueNotifier<bool>(
-      _audioService.audioHandler?.playbackState.map((state) => state.playing).distinct() ?? Stream.value(false),
-      _audioService.isPlaying,
-    );
+    // Используем текущее состояние из сервиса как источник истины
+    _playingNotifier = ValueNotifier<bool>(_audioService.isPlaying);
 
-    // Аналогично для positionStream: audioHandler.playbackState.map((state) => state.position)
     _positionNotifier = _StreamValueNotifier<Duration?>(
-      _audioService.audioHandler?.playbackState.map((state) => state.position).distinct() ?? Stream.value(Duration.zero),
-      _audioService.getPlayer()?.position ?? Duration.zero,
+      player?.positionStream ?? Stream.value(Duration.zero),
+      player?.position ?? Duration.zero,
     );
 
-    // Для duration: Используйте audioHandler.mediaItem.map((item) => item?.duration)
     _durationNotifier = _StreamValueNotifier<Duration?>(
-      _audioService.audioHandler?.mediaItem.map((item) => item?.duration) ?? Stream.value(null),
-      _audioService.getPlayer()?.duration,
+      player?.durationStream ?? Stream.value(null),
+      player?.duration,
     );
 
     _volumeNotifier = _StreamValueNotifier<double>(
@@ -155,12 +143,18 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Future<void> _togglePlayPause() async {
     try {
-      final player = _audioService.getPlayer();
       final isCurrentlyPlaying = _audioService.isPlaying;
       
       debugPrint('🎵 Toggle play/pause called');
       debugPrint('🎵 Current state from service: $isCurrentlyPlaying');
       debugPrint('🎵 Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
+      
+      // НЕМЕДЛЕННО обновляем UI состояние
+      if (mounted) {
+        // Обновляем notifier на противоположное значение
+        _playingNotifier.value = !isCurrentlyPlaying;
+        setState(() {});
+      }
       
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
@@ -171,7 +165,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
           // Режим подкаста
           debugPrint('🎵 Resuming podcast');
-          await player?.play();
+          final player = _audioService.getPlayer();
+          if (player != null && !player.playing) {
+            await player.play();
+          }
         } else {
           // Режим радио
           debugPrint('🎵 Starting/resuming radio');
@@ -196,18 +193,38 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   void _syncPlayerState() {
-    final playbackState = _audioService.audioHandler?.playbackState.value;
-    if (playbackState != null) {
-      final isPlaying = playbackState.playing;
-      final position = playbackState.position;
-      final duration = _audioService.audioHandler?.mediaItem.value?.duration;
-
-      // Обновляйте notifier'ы
-      if (_playingNotifier.value != isPlaying) _playingNotifier.value = isPlaying;
-      if (_positionNotifier.value != position) _positionNotifier.value = position;
-      if (_durationNotifier.value != duration) _durationNotifier.value = duration;
-
-      if (mounted) setState(() {});
+    final player = _audioService.getPlayer();
+    if (player != null) {
+      final isPlaying = player.playing;
+      final position = player.position;
+      final duration = player.duration;
+      
+      debugPrint('🎵 Syncing player state:');
+      debugPrint('🎵   Playing: $isPlaying');
+      debugPrint('🎵   Position: $position');
+      debugPrint('🎵   Duration: $duration');
+      
+      // Обновляем все нотифаеры только если значения изменились
+      if (_playingNotifier.value != isPlaying) {
+        _playingNotifier.value = isPlaying;
+      }
+      
+      if (_positionNotifier.value != position) {
+        _positionNotifier.value = position;
+      }
+      
+      if (_durationNotifier.value != duration) {
+        _durationNotifier.value = duration;
+      }
+      
+      // Обновляем UI только если действительно нужно
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      }
     }
   }
 
@@ -223,7 +240,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       );
     }
   }
-
   // Добавляем аннотацию @pragma чтобы избежать предупреждения о неиспользуемом методе
   @pragma('vm:prefer-inline')
   Future<void> _increaseVolume() async {
@@ -253,6 +269,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -292,18 +309,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     ValueListenableBuilder<bool>(
                       valueListenable: _playingNotifier,
                       builder: (context, playing, __) {
-                        // Получаем фактическое состояние из сервиса как источник истины
-                        final actualPlaying = _audioService.isPlaying;
-                        
-                        // Синхронизируем, если есть расхождение
-                        if (playing != actualPlaying && !_isToggling) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) {
-                              _playingNotifier.value = actualPlaying;
-                            }
-                          });
-                        }
-                        
                         return IconButton(
                           icon: Icon(
                             playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
