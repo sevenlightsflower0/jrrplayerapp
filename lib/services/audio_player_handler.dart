@@ -227,12 +227,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await player.play();
         }
       } else {
-        // Радио: проверяем, установлен ли источник
-        if (player != null && player.sequenceState != null && !player.playing) {
-           // Источник уже установлен (после паузы) — просто возобновляем
-           await player.play();
+        // Радио: проверяем состояние и либо возобновляем, либо запускаем заново
+        if (audioPlayerService.isRadioPaused) {
+          // Радио на паузе - возобновляем
+          await audioPlayerService.getPlayer()?.play();
+        } else if (audioPlayerService.isRadioStopped) {
+          // Радио остановлено - запускаем заново
+          await audioPlayerService.playRadio();
         } else {
-          // Нет источника — полный запуск
+          // Не играет и не на паузе - запускаем
           await audioPlayerService.playRadio();
         }
       }

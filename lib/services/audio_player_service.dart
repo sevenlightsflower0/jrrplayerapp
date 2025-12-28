@@ -322,6 +322,7 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
   
+
   void _startWebMetadataPolling() {
     if (!kIsWeb) return;
     
@@ -529,7 +530,7 @@ class AudioPlayerService with ChangeNotifier {
             album: 'J-Rock Radio',
             artUrl: _coverCache[cacheKey],
           );
-                            
+          
           // Обновляем тег в текущем источнике
           final player = getPlayer();
           if (player != null && player.playing) {
@@ -706,6 +707,9 @@ class AudioPlayerService with ChangeNotifier {
         await player.pause();
       }
       
+      // Устанавливаем флаг остановки
+      _isRadioStopped = true;
+      
       // Останавливаем background audio
       if (_audioHandler != null) {
         await _audioHandler!.stop();
@@ -723,15 +727,56 @@ class AudioPlayerService with ChangeNotifier {
       _updateBackgroundAudioPlaybackState(false);
       
       _notifyListeners();
-      debugPrint('Radio stopped successfully');
+      debugPrint('Radio stopped completely (needs restart)');
     } catch (e) {
       debugPrint('Error stopping radio: $e');
     }
   }
 
+  Future<void> resumeRadio() async {
+    try {
+      debugPrint('Resuming radio from pause');
+      
+      final player = getPlayer();
+      if (player != null && !player.playing) {
+        await player.play();
+        
+        // Обновляем состояние в background audio
+        _updateBackgroundAudioPlaybackState(true);
+        
+        // Запускаем таймер метаданных для Web
+        if (kIsWeb) {
+          _startWebMetadataPolling();
+        }
+        
+        _notifyListeners();
+        debugPrint('Radio resumed');
+      } else {
+        debugPrint('Cannot resume radio: player is null or already playing');
+      }
+    } catch (e) {
+      debugPrint('Error resuming radio: $e');
+    }
+  }
+
+  // Обновить playRadio для проверки состояния
   Future<void> playRadio() async {
     debugPrint('=== playRadio() START ===');
     
+    // Если радио уже играет, ничего не делаем
+    if (isRadioPlaying) {
+      debugPrint('Radio is already playing');
+      return;
+    }
+    
+    // Если радио на паузе, возобновляем
+    if (isRadioPaused) {
+      debugPrint('Resuming paused radio');
+      await resumeRadio();
+      return;
+    }
+    
+    // Если радио остановлено или не запускалось, запускаем заново
     try {
       if (!_isInitialized || _isDisposed || _player == null) {
         debugPrint('Initializing player...');
@@ -829,25 +874,26 @@ class AudioPlayerService with ChangeNotifier {
     debugPrint('=== playRadio() END ===');
   }
 
+  // Обновить pauseRadio для корректной установки состояния
   Future<void> pauseRadio() async {
     try {
       final player = getPlayer();
       debugPrint('pauseRadio called, player state: ${player?.playing}');
       
-      if (player != null) {
-        // ВСЕГДА пытаемся поставить на паузу
+      if (player != null && player.playing) {
         await player.pause();
         
         // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
-        // Обновляем локальное состояние
+        // НЕ устанавливаем _isRadioStopped = true, чтобы можно было возобновить
+        // Только обновляем локальное состояние
         _playerState = PlayerState(false, player.processingState);
         _isBuffering = false;
         
-        debugPrint('Radio paused');
+        debugPrint('Radio paused (can be resumed)');
       } else {
-        debugPrint('Player null in pauseRadio');
+        debugPrint('Radio not playing or player null in pauseRadio');
       }
       
       _notifyListeners();
@@ -1021,7 +1067,7 @@ class AudioPlayerService with ChangeNotifier {
           await _saveCurrentPosition();
           debugPrint('Podcast paused and position saved');
         } else {
-          debugPrint('Radio paused');
+          debugPrint('Radio paused (ready to resume)');
           // Для радио НЕ устанавливаем _isRadioStopped = true
           // чтобы можно было возобновить воспроизведение
         }
