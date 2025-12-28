@@ -1,16 +1,13 @@
-// audio_player_handler.dart (updated)
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'; 
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
-import 'package:just_audio/just_audio.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
   MediaItem? _currentMediaItem;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
-  StreamSubscription<PlayerState>? _playerStateSubscription;
   bool _isHandlingControl = false; // Флаг для предотвращения циклов
 
   AudioPlayerHandler(this.audioPlayerService) {
@@ -20,15 +17,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
     // Слушаем изменения состояния из AudioPlayerService
     audioPlayerService.addListener(_onAudioServiceUpdate);
     
-    // Подписываемся на потоки позиции, длительности и состояния плеера
-    _setupPlayerSubscriptions();
+    // Подписываемся на потоки позиции и длительности
+    _setupPositionStream();
   }
 
-  void _setupPlayerSubscriptions() {
+  void _setupPositionStream() {
     // Отписываемся от старых подписок если есть
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _playerStateSubscription?.cancel();
     
     final player = audioPlayerService.getPlayer();
     if (player != null) {
@@ -38,11 +34,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       _durationSubscription = player.durationStream.listen((duration) {
         _updatePlaybackDuration(duration);
-      });
-      
-      // Добавляем подписку на playerStateStream для синхронизации playing/paused
-      _playerStateSubscription = player.playerStateStream.listen((state) {
-        updatePlaybackState(state.playing);
       });
     }
   }
@@ -111,6 +102,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _onAudioServiceUpdate() {
+    
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
     
@@ -120,7 +112,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     if (player != null) {
       updatePlaybackState(player.playing);
-      _setupPlayerSubscriptions(); // Переподписываемся на потоки при необходимости
+      _setupPositionStream(); // Переподписываемся на потоки
     }
   }
 
@@ -169,10 +161,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
   void updatePlaybackState(bool isPlaying) {
     final player = audioPlayerService.getPlayer();
     final position = player?.position ?? Duration.zero;
-    final duration = player?.duration ?? Duration.zero;
-    final processingState = player?.processingState ?? AudioProcessingState.idle;
+    final duration = player?.duration;
     
-    Set<MediaAction> actions = {
+    List<MediaAction> actions = [
       MediaAction.seek,
       MediaAction.seekForward,
       MediaAction.seekBackward,
@@ -183,7 +174,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       MediaAction.stop,
       MediaAction.rewind,
       MediaAction.fastForward,
-    };
+    ];
     
     // Для радио отключаем некоторые элементы управления
     if (!audioPlayerService.isPodcastMode) {
@@ -194,18 +185,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     playbackState.add(PlaybackState(
       controls: _controls,
-      systemActions: actions,
+      systemActions: actions.toSet(),
       androidCompactActionIndices: const [2, 3, 6], // play/pause, stop
       playing: isPlaying,
       updatePosition: position,
-      bufferedPosition: duration,
+      bufferedPosition: duration ?? Duration.zero,
       speed: 1.0,
       queueIndex: 0,
       processingState: isPlaying 
           ? AudioProcessingState.ready 
-          : (processingState == ProcessingState.buffering 
-              ? AudioProcessingState.buffering 
-              : AudioProcessingState.idle),
+          : AudioProcessingState.idle,
     ));
   }
 
@@ -238,11 +227,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await player.play();
         }
       } else {
-        // Радио: всегда используем playRadio()
-        await audioPlayerService.playRadio();
+        // Радио: проверяем, установлен ли источник
+        if (player != null && player.sequenceState != null && !player.playing) {
+           // Источник уже установлен (после паузы) — просто возобновляем
+           await player.play();
+        } else {
+          // Нет источника — полный запуск
+          await audioPlayerService.playRadio();
+        }
       }
-      
-      updatePlaybackState(true);
     } catch (e) {
       debugPrint('Error in background play: $e');
     } finally {
@@ -258,7 +251,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
       await audioPlayerService.pause();
-      updatePlaybackState(false);
     } catch (e) {
       debugPrint('Error in background pause: $e');
     } finally {
@@ -278,9 +270,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
         await audioPlayerService.stopPodcast();
       } else {
         // Для радио останавливаем полностью
-        await audioPlayerService.stopFromNotification();
+        await audioPlayerService.stopRadio();
       }
-      updatePlaybackState(false);
     } catch (e) {
       debugPrint('Error in background stop: $e');
     } finally {
@@ -410,6 +401,5 @@ class AudioPlayerHandler extends BaseAudioHandler {
     audioPlayerService.removeListener(_onAudioServiceUpdate);
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _playerStateSubscription?.cancel();
   }
 }

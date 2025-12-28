@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
+import 'package:jrrplayerapp/constants/strings.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:provider/provider.dart';
 
@@ -127,14 +128,13 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Future<void> _togglePlayPause() async {
-    // Правильная проверка - только если уже выполняется
-    if (_isToggling) {
-      debugPrint('🎵 Already toggling, skipping');
-      return;
-    }
+    // ВРЕМЕННО КОММЕНТИРУЕМ ПРОВЕРКУ
+    // if (_isToggling) {
+    //   debugPrint('🎵 Already toggling, skipping');
+    //   return;
+    // }
     
     _isToggling = true;
-    debugPrint('🎵 _isToggling set to true');
     
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
@@ -167,9 +167,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       _syncPlayerState();
       
       debugPrint('🎵 Toggle completed');
-    } catch (e, stackTrace) {
+    } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
-      debugPrint('🎵 Stack trace: $stackTrace');
       
       // При ошибке синхронизируем состояние
       if (mounted) {
@@ -181,7 +180,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         SnackBar(content: Text('Error: $e')),
       );
     } finally {
-      // ВСЕГДА сбрасываем флаг
       _isToggling = false;
       debugPrint('🎵 _isToggling set to false');
     }

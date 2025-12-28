@@ -322,24 +322,6 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
   
-
-  void _updateWebMetadataPolling() {
-    if (!kIsWeb || _isPodcastMode) {
-      _stopWebMetadataPolling();
-      return;
-    }
-  
-    final bool shouldPoll = _player?.playing == true;
-    
-    if (shouldPoll && _webMetadataTimer == null) {
-      debugPrint('Starting web metadata polling (triggered by state change)');
-      _startWebMetadataPolling();
-    } else if (!shouldPoll && _webMetadataTimer != null) {
-      debugPrint('Stopping web metadata polling (player not playing)');
-      _stopWebMetadataPolling();
-    }
-  }
-
   void _startWebMetadataPolling() {
     if (!kIsWeb) return;
     
@@ -547,16 +529,7 @@ class AudioPlayerService with ChangeNotifier {
             album: 'J-Rock Radio',
             artUrl: _coverCache[cacheKey],
           );
-                  
-          // Создаем MediaItem для обновления тега
-          final mediaItem = MediaItem(
-            id: 'current_stream',
-            title: songTitle,
-            artist: artist,
-            album: 'J-Rock Radio',
-            artUri: _coverCache[cacheKey] != null ? Uri.parse(_coverCache[cacheKey]!) : null,
-          );
-          
+                            
           // Обновляем тег в текущем источнике
           final player = getPlayer();
           if (player != null && player.playing) {
@@ -787,7 +760,7 @@ class AudioPlayerService with ChangeNotifier {
       resetMetadata();
       
       // Создаем MediaItem для радио
-      final mediaItem = MediaItem(
+      const mediaItem = MediaItem(
         id: 'jrr_live_stream',
         title: 'J-Rock Radio',
         artist: 'Live Stream',
