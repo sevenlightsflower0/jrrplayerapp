@@ -703,12 +703,20 @@ class AudioPlayerService with ChangeNotifier {
       
       final player = getPlayer();
       if (player != null) {
+        // Останавливаем и сбрасываем источник
         await player.stop();
-        await player.pause();
-      }
       
-      // Устанавливаем флаг остановки
-      _isRadioStopped = true;
+        // Вместо setAudioSource(null) просто очищаем состояние
+        // Это безопаснее, так как setAudioSource не принимает null
+        if (player.processingState != ProcessingState.idle) {
+          // Создаем пустой источник для очистки
+          final emptySource = ConcatenatingAudioSource(children: []);
+          await player.setAudioSource(emptySource);
+        }
+                
+        // Устанавливаем флаг остановки
+        _isRadioStopped = true;
+      }
       
       // Останавливаем background audio
       if (_audioHandler != null) {
@@ -759,24 +767,9 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  // Обновить playRadio для проверки состояния
   Future<void> playRadio() async {
     debugPrint('=== playRadio() START ===');
     
-    // Если радио уже играет, ничего не делаем
-    if (isRadioPlaying) {
-      debugPrint('Radio is already playing');
-      return;
-    }
-    
-    // Если радио на паузе, возобновляем
-    if (isRadioPaused) {
-      debugPrint('Resuming paused radio');
-      await resumeRadio();
-      return;
-    }
-    
-    // Если радио остановлено или не запускалось, запускаем заново
     try {
       if (!_isInitialized || _isDisposed || _player == null) {
         debugPrint('Initializing player...');
@@ -874,24 +867,19 @@ class AudioPlayerService with ChangeNotifier {
     debugPrint('=== playRadio() END ===');
   }
 
-  // Обновить pauseRadio для корректной установки состояния
   Future<void> pauseRadio() async {
     try {
       final player = getPlayer();
       debugPrint('pauseRadio called, player state: ${player?.playing}');
       
       if (player != null && player.playing) {
+        // ПРОСТО ставим на паузу, НЕ останавливаем и НЕ сбрасываем источник
         await player.pause();
         
         // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
-        // НЕ устанавливаем _isRadioStopped = true, чтобы можно было возобновить
-        // Только обновляем локальное состояние
-        _playerState = PlayerState(false, player.processingState);
-        _isBuffering = false;
-        
-        debugPrint('Radio paused (can be resumed)');
+        debugPrint('Radio paused (source preserved)');
       } else {
         debugPrint('Radio not playing or player null in pauseRadio');
       }
@@ -906,19 +894,22 @@ class AudioPlayerService with ChangeNotifier {
   Future<void> toggleRadio() async {
     debugPrint('toggleRadio called, isRadioPlaying: $isRadioPlaying, isRadioStopped: $isRadioStopped');
     
-    if (isRadioStopped) {
-      // Радио было остановлено, запускаем заново
-      await playRadio();
-    } else if (isRadioPlaying) {
+    if (isRadioPlaying) {
       // Радио играет, ставим на паузу
       await pauseRadio();
     } else {
-      // Радио на паузе, возобновляем
+      // Радио не играет - либо на паузе, либо остановлено
       final player = getPlayer();
+      
+      // Проверяем, есть ли активный источник в плеере
       if (player != null && player.processingState != ProcessingState.idle) {
+        // У плеера есть источник, просто продолжаем воспроизведение
         await player.play();
+        debugPrint('Resumed existing radio stream');
       } else {
+        // Плеер в состоянии idle или нет источника - запускаем заново
         await playRadio();
+        debugPrint('Started new radio stream');
       }
     }
   }
@@ -1067,9 +1058,7 @@ class AudioPlayerService with ChangeNotifier {
           await _saveCurrentPosition();
           debugPrint('Podcast paused and position saved');
         } else {
-          debugPrint('Radio paused (ready to resume)');
-          // Для радио НЕ устанавливаем _isRadioStopped = true
-          // чтобы можно было возобновить воспроизведение
+          debugPrint('Radio paused');
         }
         
         _notifyListeners();

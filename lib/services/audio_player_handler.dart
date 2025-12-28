@@ -227,17 +227,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await player.play();
         }
       } else {
-        // Радио: проверяем состояние и либо возобновляем, либо запускаем заново
-        if (audioPlayerService.isRadioPaused) {
-          // Радио на паузе - возобновляем
-          await audioPlayerService.getPlayer()?.play();
-        } else if (audioPlayerService.isRadioStopped) {
-          // Радио остановлено - запускаем заново
-          await audioPlayerService.playRadio();
-        } else {
-          // Не играет и не на паузе - запускаем
-          await audioPlayerService.playRadio();
-        }
+        // Радио: используем toggleRadio(), который сам решит что делать
+        await audioPlayerService.toggleRadio();
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
