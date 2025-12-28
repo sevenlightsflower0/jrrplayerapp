@@ -200,23 +200,24 @@ class AudioPlayerService with ChangeNotifier {
     try {
       _audioHandler = await AudioService.init(
         builder: () => AudioPlayerHandler(this),
-        config: const AudioServiceConfig(
+        config: AudioServiceConfig(
           androidNotificationChannelId: 'com.jrrplayerapp.channel.audio',
           androidNotificationChannelName: 'J-Rock Radio',
-          androidNotificationOngoing: false,
-          androidStopForegroundOnPause: false,
+          androidNotificationChannelDescription: 'Воспроизведение музыки и подкастов',
+          androidNotificationOngoing: true, // Важно для iOS
+          androidStopForegroundOnPause: false, // Не останавливать foreground при паузе
           androidNotificationIcon: 'mipmap/ic_launcher',
           notificationColor: Colors.purple,
           androidShowNotificationBadge: true,
           androidResumeOnClick: true,
+          // Для iOS используем флаги в notificationActions (если нужны)
         ),
       );
       _isBackgroundAudioInitialized = true;
-      debugPrint('Background audio initialized with volume controls');
+      debugPrint('Background audio initialized with iOS support');
     } catch (e, stackTrace) {
       developer.log('Error initializing background audio: $e', 
         error: e, stackTrace: stackTrace);
-
     }
   }
 
@@ -1053,7 +1054,7 @@ class AudioPlayerService with ChangeNotifier {
       if (player != null && player.playing) {
         await player.pause();
         
-        // Обновляем состояние в background audio
+        // Обновляем состояние в background audio с правильным processingState
         _updateBackgroundAudioPlaybackState(false);
         
         if (_isPodcastMode) {
@@ -1061,6 +1062,8 @@ class AudioPlayerService with ChangeNotifier {
           debugPrint('Podcast paused and position saved');
         } else {
           debugPrint('Radio paused');
+          // Для радио НЕ устанавливаем _isRadioStopped при паузе
+          // только при полной остановке
         }
         
         _notifyListeners();
@@ -1073,7 +1076,20 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  Future<void> _saveCurrentPosition([Duration? position]) async {
+  Future<void> updateNotification() async {
+    if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+      final handler = _audioHandler as AudioPlayerHandler;
+      handler.updatePlaybackState(isPlaying);
+      
+      // Также обновляем метаданные
+      final metadata = _currentMetadata;
+      if (metadata != null) {
+        handler.updateMetadata(metadata);
+      }
+    }
+  }
+    
+    Future<void> _saveCurrentPosition([Duration? position]) async {
     if (_currentEpisode != null) {
       try {
         final currentPosition = position ?? _player?.position ?? Duration.zero;

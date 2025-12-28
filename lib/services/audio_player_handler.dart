@@ -158,7 +158,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _updateControls();
   }
 
-  void updatePlaybackState(bool isPlaying) {
+  
     final player = audioPlayerService.getPlayer();
     final position = player?.position ?? Duration.zero;
     final duration = player?.duration;
@@ -183,6 +183,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
       actions.remove(MediaAction.skipToPrevious);
     }
     
+    // ВАЖНО: Для iOS используем AudioProcessingState.ready при паузе
+    // чтобы уведомление не исчезало
+    AudioProcessingState processingState;
+    
+    if (player == null) {
+      processingState = AudioProcessingState.idle;
+    } else {
+      if (isPlaying) {
+        processingState = AudioProcessingState.ready;
+      } else {
+        // На iOS уведомление остаётся видимым только при AudioProcessingState.ready
+        processingState = AudioProcessingState.ready;
+      }
+    }
+    
     playbackState.add(PlaybackState(
       controls: _controls,
       systemActions: actions.toSet(),
@@ -192,9 +207,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       bufferedPosition: duration ?? Duration.zero,
       speed: 1.0,
       queueIndex: 0,
-      processingState: isPlaying 
-          ? AudioProcessingState.ready 
-          : AudioProcessingState.idle,
+      processingState: processingState,
     ));
   }
 
