@@ -203,11 +203,12 @@ class AudioPlayerService with ChangeNotifier {
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.jrrplayerapp.channel.audio',
           androidNotificationChannelName: 'J-Rock Radio',
-          androidNotificationOngoing: true,
-          androidStopForegroundOnPause: true,
+          androidNotificationOngoing: false,
+          androidStopForegroundOnPause: false,
           androidNotificationIcon: 'mipmap/ic_launcher',
           notificationColor: Colors.purple,
           androidShowNotificationBadge: true,
+          androidResumeOnClick: true,
         ),
       );
       _isBackgroundAudioInitialized = true;
