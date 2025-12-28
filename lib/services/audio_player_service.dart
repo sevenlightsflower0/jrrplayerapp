@@ -839,12 +839,8 @@ class AudioPlayerService with ChangeNotifier {
           _startWebMetadataPolling();
         }
         
-        // Обновляем background audio
-        if (_audioHandler != null) {
-          debugPrint('Updating background audio...');
-          await _audioHandler?.play();
-          _updateBackgroundAudioPlaybackState(true);
-        }
+        // Обновляем background audio состояние
+        _updateBackgroundAudioPlaybackState(true);
         
         debugPrint('Radio playback successful');
         _notifyListeners();
@@ -866,6 +862,11 @@ class AudioPlayerService with ChangeNotifier {
     
     debugPrint('=== playRadio() END ===');
   }
+
+  Future<void> startRadioFromBackground() async {
+    debugPrint('startRadioFromBackground called');
+    await playRadio();
+}
 
   Future<void> pauseRadio() async {
     try {

@@ -227,8 +227,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await player.play();
         }
       } else {
-        // Радио: используем toggleRadio(), который сам решит что делать
-        await audioPlayerService.toggleRadio();
+        // Радио: явно запускаем радио
+        await audioPlayerService.playRadio();
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
