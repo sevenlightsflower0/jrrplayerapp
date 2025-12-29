@@ -204,7 +204,7 @@ class AudioPlayerService with ChangeNotifier {
           androidNotificationChannelId: 'com.jrrplayerapp.channel.audio',
           androidNotificationChannelName: 'J-Rock Radio',
           androidNotificationOngoing: true,
-          androidStopForegroundOnPause: true,
+          androidStopForegroundOnPause: false,
           androidNotificationIcon: 'mipmap/ic_launcher',
           notificationColor: Colors.purple,
           androidShowNotificationBadge: true,
