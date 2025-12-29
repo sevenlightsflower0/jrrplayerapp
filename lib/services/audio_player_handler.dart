@@ -194,7 +194,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       queueIndex: 0,
       processingState: isPlaying 
           ? AudioProcessingState.ready 
-          : AudioProcessingState.idle,
+          : AudioProcessingState.ready,  // Изменено: ready даже на паузе, чтобы уведомление оставалось
     ));
   }
 
