@@ -1,71 +1,53 @@
 name: 0_build_7_days_test_IPA_for_iOS
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Ручной запуск
 
 jobs:
   build-ios:
-    name: 🎉 iOS Build
+    name: 🎉 iOS Build (7-days free testing)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           architecture: x64
+
+      - run: flutter clean  # Очистка для избежания кэш-проблем
       - run: flutter pub get
-      
-      # Configure git and network settings
-      - name: Configure git and network
-        run: |
-          git config --global http.postBuffer 524288000
-          git config --global https.postBuffer 524288000
-          git config --global http.lowSpeedLimit 0
-          git config --global http.lowSpeedTime 999999
-          
-      # Update pod repo with retry
+
+      # Обновление pod repo (с retry)
       - name: Update CocoaPods repository with retry
         working-directory: ios
         run: |
           for i in {1..3}; do
             echo "Attempt $i: Updating CocoaPods repository..."
             pod repo update && break
-            if [ $i -eq 3 ]; then
-              echo "Failed to update pod repo after 3 attempts"
-              exit 1
-            fi
             sleep 5
           done
-      
-      # Run pod install with retry
+
+      # Pod install (с retry)
       - name: Install CocoaPods dependencies with retry
         working-directory: ios
         run: |
           for i in {1..5}; do
             echo "Attempt $i: Running pod install..."
             pod install --repo-update && break
-            if [ $i -eq 5 ]; then
-              echo "Failed to install pods after 5 attempts"
-              exit 1
-            fi
-            echo "Pod install failed, retrying in 10 seconds..."
+            echo "Retry in 10s..."
             sleep 10
           done
 
       - run: flutter build ios --release --no-codesign
 
-      - run: mkdir Payload
+      - name: Create Payload and IPA
         working-directory: build/ios/iphoneos
+        run: |
+          mkdir Payload
+          mv Runner.app Payload/
+          zip -qq -r -9 ../FlutterIpaExport.ipa Payload/
 
-      - run: mv Runner.app/ Payload
-        working-directory: build/ios/iphoneos
-
-      - name: Zip output
-        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
-        working-directory: build/ios/iphoneos
-
-      # Upload as workflow artifact (doesn't require special permissions)
       - name: Upload IPA as Artifact
         uses: actions/upload-artifact@v4
         with:
