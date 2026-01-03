@@ -47,10 +47,30 @@ jobs:
           mkdir Payload
           mv Runner.app Payload/
           zip -qq -r -9 ../FlutterIpaExport.ipa Payload/
+          
+          # Проверка создания файла
+          echo "Checking if IPA file was created..."
+          ls -la ../FlutterIpaExport.ipa || echo "IPA file not found!"
+          
+      - name: Check IPA size
+        run: |
+          if [ -f "build/ios/FlutterIpaExport.ipa" ]; then
+            SIZE=$(stat -f%z "build/ios/FlutterIpaExport.ipa")
+            echo "IPA file size: $((SIZE / 1024 / 1024)) MB"
+          else
+            echo "ERROR: IPA file not found!"
+            exit 1
+          fi
+
+      - name: Update outdated packages
+        run: |
+          flutter pub outdated
+          # Если хотите автоматически обновлять, раскомментируйте:
+          # flutter pub upgrade --major-versions
 
       - name: Upload IPA as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: FlutterIpaExport.ipa
-          path: build/ios/iphoneos/FlutterIpaExport.ipa
+          path: build/ios/FlutterIpaExport.ipa  # Путь исправлен
           retention-days: 7
