@@ -200,7 +200,7 @@ class AudioPlayerService with ChangeNotifier {
     try {
       _audioHandler = await AudioService.init(
         builder: () => AudioPlayerHandler(this),
-        config: const AudioServiceConfig(
+        config: AudioServiceConfig(
           androidNotificationChannelId: 'com.jrrplayerapp.channel.audio',
           androidNotificationChannelName: 'J-Rock Radio',
           androidNotificationOngoing: true,
