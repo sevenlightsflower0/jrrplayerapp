@@ -76,8 +76,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
       action: MediaAction.skipToPrevious,
     ),
     MediaControl(
-      androidIcon: 'drawable/ic_rewind',
-      label: 'Назад',
+      androidIcon: 'drawable/ic_rewind_30s',
+      label: '30 секунд назад',
       action: MediaAction.rewind,
     ),
     MediaControl(
@@ -91,8 +91,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
       action: MediaAction.pause,
     ),
     MediaControl(
-      androidIcon: 'drawable/ic_fast_forward',
-      label: 'Вперед',
+      androidIcon: 'drawable/ic_fast_forward_30s',
+      label: '30 секунд вперед',
       action: MediaAction.fastForward,
     ),
     MediaControl(
