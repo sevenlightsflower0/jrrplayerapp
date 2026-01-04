@@ -845,7 +845,7 @@ class AudioPlayerService with ChangeNotifier {
           _startWebMetadataPolling();
         }
         
-        // Обновляем background audio состояние
+        // Немедленно обновляем background audio состояние
         _updateBackgroundAudioPlaybackState(true);
         
         // После успешного запуска уведомляем о состоянии
@@ -872,10 +872,10 @@ class AudioPlayerService with ChangeNotifier {
     debugPrint('=== playRadio() END ===');
   }
 
-  Future<void> startRadioFromBackground() async {
-    debugPrint('startRadioFromBackground called');
-    await playRadio();
-}
+    Future<void> startRadioFromBackground() async {
+      debugPrint('startRadioFromBackground called');
+      await playRadio();
+  }
 
   Future<void> pauseRadio() async {
     try {
@@ -1061,11 +1061,11 @@ class AudioPlayerService with ChangeNotifier {
       if (player != null && player.playing) {
         await player.pause();
         
+        // Немедленно уведомляем AudioHandler
+        _updateBackgroundAudioPlaybackState(false);
+        
         // Уведомляем все слушатели о изменении состояния
         _playbackStateController.add(false);
-        
-        // Обновляем состояние в background audio
-        _updateBackgroundAudioPlaybackState(false);
         
         if (_isPodcastMode) {
           await _saveCurrentPosition();
@@ -1077,6 +1077,8 @@ class AudioPlayerService with ChangeNotifier {
         _notifyListeners();
       } else {
         debugPrint('Pause ignored: player not playing or null');
+        // Даже если плеер не играет, все равно уведомляем AudioHandler
+        _updateBackgroundAudioPlaybackState(false);
       }
     } catch (e) {
       debugPrint('Error in pause: $e');

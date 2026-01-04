@@ -28,8 +28,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
     // Отписываемся от старых подписок если есть
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _playingSubscription?.cancel(); // NEW
-    _processingSubscription?.cancel(); // NEW
+    _playingSubscription?.cancel();
+    _processingSubscription?.cancel();
     
     final player = audioPlayerService.getPlayer();
     if (player != null) {
@@ -41,14 +41,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
         _updatePlaybackDuration(duration);
       });
       
-      // NEW: Listen to playing state changes
+      // Слушаем изменения состояния playing
       _playingSubscription = player.playingStream.listen((isPlaying) {
-        updatePlaybackState(isPlaying);
+        debugPrint('Background: playingStream changed to $isPlaying');
+        // Небольшая задержка для гарантии обновления
+        Future.delayed(const Duration(milliseconds: 100), () {
+          updatePlaybackState(isPlaying);
+        });
       });
       
-      // NEW: Listen to processing state changes
+      // Слушаем изменения состояния обработки
       _processingSubscription = player.processingStateStream.listen((state) {
-        updatePlaybackState(player.playing);
+        debugPrint('Background: processingState changed to $state');
+        Future.delayed(const Duration(milliseconds: 100), () {
+          updatePlaybackState(player.playing);
+        });
       });
     }
   }
@@ -109,8 +116,51 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   void _updateControls() {
     final currentState = playbackState.value;
+    final isPlaying = currentState.playing;
+    
+    // Создаем динамические контролы как в updatePlaybackState
+    final List<MediaControl> dynamicControls = [
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_previous',
+        label: 'Предыдущий',
+        action: MediaAction.skipToPrevious,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_rewind_30s',
+        label: '30 секунд назад',
+        action: MediaAction.rewind,
+      ),
+      if (!isPlaying)
+        const MediaControl(
+          androidIcon: 'drawable/ic_play',
+          label: 'Воспроизвести',
+          action: MediaAction.play,
+        ),
+      if (isPlaying)
+        const MediaControl(
+          androidIcon: 'drawable/ic_pause',
+          label: 'Пауза',
+          action: MediaAction.pause,
+        ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_fast_forward_30s',
+        label: '30 секунд вперед',
+        action: MediaAction.fastForward,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_next',
+        label: 'Следующий',
+        action: MediaAction.skipToNext,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_stop',
+        label: 'Стоп',
+        action: MediaAction.stop,
+      ),
+    ];
+    
     playbackState.add(currentState.copyWith(
-      controls: _controls,
+      controls: dynamicControls,
     ));
   }
 
@@ -175,6 +225,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final position = player?.position ?? Duration.zero;
     final duration = player?.duration;
     
+    // Создаем список доступных действий
     List<MediaAction> actions = [
       MediaAction.seek,
       MediaAction.seekForward,
@@ -194,7 +245,53 @@ class AudioPlayerHandler extends BaseAudioHandler {
       actions.remove(MediaAction.skipToNext);
       actions.remove(MediaAction.skipToPrevious);
     }
-    
+
+    // Динамические controls: заменяем play/pause в зависимости от isPlaying
+    final List<MediaControl> dynamicControls = [
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_previous',
+        label: 'Предыдущий',
+        action: MediaAction.skipToPrevious,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_rewind_30s',
+        label: '30 секунд назад',
+        action: MediaAction.rewind,
+      ),
+      if (!isPlaying)  // Только play, если не играет
+        const MediaControl(
+          androidIcon: 'drawable/ic_play',
+          label: 'Воспроизвести',
+          action: MediaAction.play,
+        ),
+      if (isPlaying)  // Только pause, если играет
+        const MediaControl(
+          androidIcon: 'drawable/ic_pause',
+          label: 'Пауза',
+          action: MediaAction.pause,
+        ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_fast_forward_30s',
+        label: '30 секунд вперед',
+        action: MediaAction.fastForward,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_next',
+        label: 'Следующий',
+        action: MediaAction.skipToNext,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_stop',
+        label: 'Стоп',
+        action: MediaAction.stop,
+      ),
+    ];
+
+    // Обновите compact indices динамически
+    final List<int> compactIndices = isPlaying 
+        ? [0, 3, 6]  // prev, pause, stop (индексы в dynamicControls)
+        : [0, 2, 6]; // prev, play, stop  
+      
     // CHANGED: Map just_audio ProcessingState to audio_service AudioProcessingState
     AudioProcessingState processingState = AudioProcessingState.idle;
     if (player != null) {
@@ -218,9 +315,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
     
     playbackState.add(PlaybackState(
-      controls: _controls,
+      controls: dynamicControls,
       systemActions: actions.toSet(),
-      androidCompactActionIndices: const [2, 3, 6], // play/pause, stop
+      androidCompactActionIndices: compactIndices,
       playing: isPlaying,
       updatePosition: position,
       bufferedPosition: duration ?? Duration.zero,
@@ -228,9 +325,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
       queueIndex: 0,
       processingState: processingState,
     ));
-    
-    // NEW: Refresh controls after state update
-    _updateControls();
   }
 
   void _updateMediaItem() {
@@ -244,7 +338,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
     );
     mediaItem.add(_currentMediaItem);
     
-    _updateControls();
+    // Обновляем состояние с правильными контролами
+    updatePlaybackState(false); // По умолчанию не играет
   }
 
   @override
@@ -260,16 +355,18 @@ class AudioPlayerHandler extends BaseAudioHandler {
         // Подкаст: просто возобновляем
         if (player != null && !player.playing) {
           await player.play();
+          // Немедленно обновляем состояние
+          updatePlaybackState(true);
         }
       } else {
         // Радио: явно запускаем радио
         await audioPlayerService.playRadio();
+        // Состояние уже обновлено в playRadio()
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
     } finally {
       _isHandlingControl = false;
-      // REMOVED: Delayed update (handled by streams now)
     }
   }
 
@@ -281,15 +378,18 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
       await audioPlayerService.pause();
+      
+      // Сразу обновляем состояние, не дожидаясь stream
+      final player = audioPlayerService.getPlayer();
+      if (player != null) {
+        updatePlaybackState(false);
+      }
     } catch (e) {
       debugPrint('Error in background pause: $e');
     } finally {
       _isHandlingControl = false;
-      // REMOVED: Delayed update
     }
   }
-
-  // REMOVED: _updatePlaybackStateAfterAction() (replaced by stream listeners)
 
   @override
   Future<void> stop() async {
