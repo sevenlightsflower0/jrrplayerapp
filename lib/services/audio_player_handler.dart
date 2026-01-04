@@ -102,7 +102,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _onAudioServiceUpdate() {
-    
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
     
@@ -247,6 +246,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background play: $e');
     } finally {
       _isHandlingControl = false;
+      // Сразу обновляем состояние после выполнения
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -262,6 +263,19 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background pause: $e');
     } finally {
       _isHandlingControl = false;
+      // Сразу обновляем состояние после выполнения
+      _updatePlaybackStateAfterAction();
+    }
+  }
+
+  // Новый метод для обновления состояния после действия
+  void _updatePlaybackStateAfterAction() {
+    final player = audioPlayerService.getPlayer();
+    if (player != null) {
+      // Используем задержку, чтобы дать время на обновление состояния
+      Future.delayed(const Duration(milliseconds: 100), () {
+        updatePlaybackState(player.playing);
+      });
     }
   }
 
@@ -283,6 +297,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background stop: $e');
     } finally {
       _isHandlingControl = false;
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -300,6 +315,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background seek: $e');
     } finally {
       _isHandlingControl = false;
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -317,6 +333,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background skipToNext: $e');
     } finally {
       _isHandlingControl = false;
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -334,6 +351,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background skipToPrevious: $e');
     } finally {
       _isHandlingControl = false;
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -358,6 +376,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background rewind: $e');
     } finally {
       _isHandlingControl = false;
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -383,6 +402,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background fastForward: $e');
     } finally {
       _isHandlingControl = false;
+      _updatePlaybackStateAfterAction();
     }
   }
 
@@ -392,14 +412,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _isHandlingControl = true;
     
     debugPrint('Background audio: playMediaItem ${mediaItem.title}');
-    this.mediaItem.add(mediaItem);
-    playbackState.add(playbackState.value.copyWith(
-      playing: true,
-      processingState: AudioProcessingState.ready,
-      controls: _controls,
-    ));
-    
-    _isHandlingControl = false;
+    try {
+      this.mediaItem.add(mediaItem);
+      playbackState.add(playbackState.value.copyWith(
+        playing: true,
+        processingState: AudioProcessingState.ready,
+        controls: _controls,
+      ));
+    } finally {
+      _isHandlingControl = false;
+    }
   }
 
   @override

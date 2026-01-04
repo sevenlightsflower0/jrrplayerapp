@@ -81,6 +81,12 @@ class AudioPlayerService with ChangeNotifier {
   final Map<String, String> _coverCache = {};
 
   String? _currentOperationId;
+
+  // Добавляем StreamController для уведомлений о состоянии
+  final StreamController<bool> _playbackStateController = 
+      StreamController<bool>.broadcast();
+  
+  Stream<bool> get playbackStateStream => _playbackStateController.stream;
   
   // Добавьте этот геттер
   AudioHandler? get audioHandler => _audioHandler;
@@ -842,6 +848,9 @@ class AudioPlayerService with ChangeNotifier {
         // Обновляем background audio состояние
         _updateBackgroundAudioPlaybackState(true);
         
+        // После успешного запуска уведомляем о состоянии
+        _playbackStateController.add(true);
+      
         debugPrint('Radio playback successful');
         _notifyListeners();
         
@@ -1052,6 +1061,9 @@ class AudioPlayerService with ChangeNotifier {
       if (player != null && player.playing) {
         await player.pause();
         
+        // Уведомляем все слушатели о изменении состояния
+        _playbackStateController.add(false);
+        
         // Обновляем состояние в background audio
         _updateBackgroundAudioPlaybackState(false);
         
@@ -1143,16 +1155,17 @@ class AudioPlayerService with ChangeNotifier {
     
     await _saveCurrentPosition();
     
-    // Останавливаем таймер метаданных для Web
     if (kIsWeb) {
       _stopWebMetadataPolling();
     }
+    
+    // Закрываем StreamController
+    await _playbackStateController.close();
     
     await _player?.stop();
     await _player?.dispose();
     _player = null;
     
-    // Останавливаем background audio
     await _audioHandler?.stop();
     _audioHandler = null;
     
