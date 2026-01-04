@@ -8,7 +8,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
   MediaItem? _currentMediaItem;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
-  bool _isHandlingControl = false; // Флаг для предотвращения циклов
+  StreamSubscription<bool>? _playingSubscription; // NEW: Listener for playing state
+  StreamSubscription<ProcessingState>? _processingSubscription; // NEW: Listener for processing state
+  bool _isHandlingControl = false;
 
   AudioPlayerHandler(this.audioPlayerService) {
     // Инициализируем начальное состояние
@@ -18,13 +20,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
     audioPlayerService.addListener(_onAudioServiceUpdate);
     
     // Подписываемся на потоки позиции и длительности
-    _setupPositionStream();
+    _setupStreams(); // CHANGED: Combined setup
   }
 
-  void _setupPositionStream() {
+  void _setupStreams() {
     // Отписываемся от старых подписок если есть
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
+    _playingSubscription?.cancel(); // NEW
+    _processingSubscription?.cancel(); // NEW
     
     final player = audioPlayerService.getPlayer();
     if (player != null) {
@@ -35,18 +39,26 @@ class AudioPlayerHandler extends BaseAudioHandler {
       _durationSubscription = player.durationStream.listen((duration) {
         _updatePlaybackDuration(duration);
       });
+      
+      // NEW: Listen to playing state changes
+      _playingSubscription = player.playingStream.listen((isPlaying) {
+        updatePlaybackState(isPlaying);
+      });
+      
+      // NEW: Listen to processing state changes
+      _processingSubscription = player.processingStateStream.listen((state) {
+        updatePlaybackState(player.playing);
+      });
     }
   }
 
   void _updatePlaybackPosition(Duration position) {
-    // Обновляем позицию в состоянии воспроизведения
     playbackState.add(playbackState.value.copyWith(
       updatePosition: position,
     ));
   }
 
   void _updatePlaybackDuration(Duration? duration) {
-    // Обновляем длительность в MediaItem
     if (_currentMediaItem != null && duration != null) {
       _currentMediaItem = _currentMediaItem!.copyWith(
         duration: duration,
@@ -111,7 +123,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     if (player != null) {
       updatePlaybackState(player.playing);
-      _setupPositionStream(); // Переподписываемся на потоки
+      _setupStreams(); // Переподписываемся на потоки
     }
   }
 
@@ -182,18 +194,25 @@ class AudioPlayerHandler extends BaseAudioHandler {
       actions.remove(MediaAction.skipToPrevious);
     }
     
-    // ВАЖНО: Для iOS используем AudioProcessingState.ready при паузе
-    // чтобы уведомление не исчезало
-    AudioProcessingState processingState;
-    
-    if (player == null) {
-      processingState = AudioProcessingState.idle;
-    } else {
-      if (isPlaying) {
-        processingState = AudioProcessingState.ready;
-      } else {
-        // На iOS уведомление остаётся видимым только при AudioProcessingState.ready
-        processingState = AudioProcessingState.ready;
+    // CHANGED: Map just_audio ProcessingState to audio_service AudioProcessingState
+    AudioProcessingState processingState = AudioProcessingState.idle;
+    if (player != null) {
+      switch (player.processingState) {
+        case ProcessingState.idle:
+          processingState = AudioProcessingState.idle;
+          break;
+        case ProcessingState.loading:
+          processingState = AudioProcessingState.loading;
+          break;
+        case ProcessingState.buffering:
+          processingState = AudioProcessingState.buffering;
+          break;
+        case ProcessingState.ready:
+          processingState = AudioProcessingState.ready;
+          break;
+        case ProcessingState.completed:
+          processingState = AudioProcessingState.completed;
+          break;
       }
     }
     
@@ -208,6 +227,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
       queueIndex: 0,
       processingState: processingState,
     ));
+    
+    // NEW: Refresh controls after state update
+    _updateControls();
   }
 
   void _updateMediaItem() {
@@ -246,8 +268,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background play: $e');
     } finally {
       _isHandlingControl = false;
-      // Сразу обновляем состояние после выполнения
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update (handled by streams now)
     }
   }
 
@@ -263,21 +284,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background pause: $e');
     } finally {
       _isHandlingControl = false;
-      // Сразу обновляем состояние после выполнения
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
-  // Новый метод для обновления состояния после действия
-  void _updatePlaybackStateAfterAction() {
-    final player = audioPlayerService.getPlayer();
-    if (player != null) {
-      // Используем задержку, чтобы дать время на обновление состояния
-      Future.delayed(const Duration(milliseconds: 100), () {
-        updatePlaybackState(player.playing);
-      });
-    }
-  }
+  // REMOVED: _updatePlaybackStateAfterAction() (replaced by stream listeners)
 
   @override
   Future<void> stop() async {
@@ -297,7 +308,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background stop: $e');
     } finally {
       _isHandlingControl = false;
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
@@ -315,7 +326,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background seek: $e');
     } finally {
       _isHandlingControl = false;
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
@@ -333,7 +344,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background skipToNext: $e');
     } finally {
       _isHandlingControl = false;
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
@@ -351,7 +362,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background skipToPrevious: $e');
     } finally {
       _isHandlingControl = false;
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
@@ -376,7 +387,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background rewind: $e');
     } finally {
       _isHandlingControl = false;
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
@@ -402,7 +413,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Error in background fastForward: $e');
     } finally {
       _isHandlingControl = false;
-      _updatePlaybackStateAfterAction();
+      // REMOVED: Delayed update
     }
   }
 
@@ -430,5 +441,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     audioPlayerService.removeListener(_onAudioServiceUpdate);
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
+    _playingSubscription?.cancel(); // NEW
+    _processingSubscription?.cancel(); // NEW
   }
 }
