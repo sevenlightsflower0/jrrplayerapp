@@ -355,13 +355,20 @@ class AudioPlayerHandler extends BaseAudioHandler {
         // Подкаст: просто возобновляем
         if (player != null && !player.playing) {
           await player.play();
-          // Немедленно обновляем состояние
           updatePlaybackState(true);
         }
       } else {
-        // Радио: явно запускаем радио
-        await audioPlayerService.playRadio();
-        // Состояние уже обновлено в playRadio()
+        // Радио: проверяем текущее состояние
+        if (audioPlayerService.isRadioPlaying) {
+          // Радио уже играет, ничего не делаем
+          debugPrint('Radio is already playing, ignoring play command');
+        } else if (audioPlayerService.isRadioPaused) {
+          // Радио на паузе, возобновляем
+          await audioPlayerService.resumeRadio();
+        } else {
+          // Радио остановлено, запускаем заново
+          await audioPlayerService.playRadio();
+        }
       }
     } catch (e) {
       debugPrint('Error in background play: $e');
@@ -377,12 +384,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      await audioPlayerService.pause();
-      
-      // Сразу обновляем состояние, не дожидаясь stream
-      final player = audioPlayerService.getPlayer();
-      if (player != null) {
-        updatePlaybackState(false);
+      if (audioPlayerService.isPodcastMode) {
+        await audioPlayerService.pause();
+        
+        // Сразу обновляем состояние
+        final player = audioPlayerService.getPlayer();
+        if (player != null) {
+          updatePlaybackState(false);
+        }
+      } else {
+        // Радио: проверяем, играет ли радио
+        if (audioPlayerService.isRadioPlaying) {
+          await audioPlayerService.pauseRadio();
+        } else {
+          debugPrint('Radio is not playing, ignoring pause command');
+        }
       }
     } catch (e) {
       debugPrint('Error in background pause: $e');

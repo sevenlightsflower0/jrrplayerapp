@@ -781,6 +781,12 @@ class AudioPlayerService with ChangeNotifier {
         debugPrint('Initializing player...');
         await initialize();
       }
+      
+      // Если радио уже играет, ничего не делаем
+      if (isRadioPlaying) {
+        debugPrint('Radio is already playing, ignoring playRadio command');
+        return;
+      }
 
       // Сбросим флаг остановки радио
       _isRadioStopped = false;
