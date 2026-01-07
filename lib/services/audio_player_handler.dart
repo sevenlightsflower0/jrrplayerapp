@@ -44,18 +44,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
       // Слушаем изменения состояния playing
       _playingSubscription = player.playingStream.listen((isPlaying) {
         debugPrint('Background: playingStream changed to $isPlaying');
-        // Небольшая задержка для гарантии обновления
-        Future.delayed(const Duration(milliseconds: 100), () {
-          updatePlaybackState(isPlaying);
-        });
+        updatePlaybackState(isPlaying); // CHANGED: Removed delay for faster sync
       });
       
       // Слушаем изменения состояния обработки
       _processingSubscription = player.processingStateStream.listen((state) {
         debugPrint('Background: processingState changed to $state');
-        Future.delayed(const Duration(milliseconds: 100), () {
-          updatePlaybackState(player.playing);
-        });
+        updatePlaybackState(player.playing); // CHANGED: Removed delay for faster sync
       });
     }
   }
@@ -75,7 +70,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  // Элементы управления для уведомления (Android)
   List<MediaControl> get _controls => const [
     MediaControl(
       androidIcon: 'drawable/ic_skip_previous',
@@ -291,7 +285,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final List<int> compactIndices = isPlaying 
         ? [0, 3, 6]  // prev, pause, stop (индексы в dynamicControls)
         : [0, 2, 6]; // prev, play, stop  
-      
+    
     // CHANGED: Map just_audio ProcessingState to audio_service AudioProcessingState
     AudioProcessingState processingState = AudioProcessingState.idle;
     if (player != null) {
@@ -370,6 +364,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await audioPlayerService.playRadio();
         }
       }
+      // NEW: Explicit sync after action
+      _onAudioServiceUpdate();
     } catch (e) {
       debugPrint('Error in background play: $e');
     } finally {
@@ -405,6 +401,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
           debugPrint('Radio is stopped, ignoring pause command');
         }
       }
+      // NEW: Explicit sync after action
+      _onAudioServiceUpdate();
     } catch (e) {
       debugPrint('Error in background pause: $e');
     } finally {
@@ -426,11 +424,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
         // Для радио останавливаем полностью
         await audioPlayerService.stopRadio();
       }
+      // NEW: Explicit sync after action
+      _onAudioServiceUpdate();
     } catch (e) {
       debugPrint('Error in background stop: $e');
     } finally {
       _isHandlingControl = false;
-      // REMOVED: Delayed update
     }
   }
 
