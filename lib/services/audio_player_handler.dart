@@ -358,15 +358,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
           updatePlaybackState(true);
         }
       } else {
-        // Радио: проверяем текущее состояние
+        // РАДИО: Уточненная логика
         if (audioPlayerService.isRadioPlaying) {
           // Радио уже играет, ничего не делаем
           debugPrint('Radio is already playing, ignoring play command');
         } else if (audioPlayerService.isRadioPaused) {
-          // Радио на паузе, возобновляем
+          // Радио на паузе - возобновляем (НЕ создаем новый источник)
           await audioPlayerService.resumeRadio();
         } else {
-          // Радио остановлено, запускаем заново
+          // Радио остановлено или еще не запущено
           await audioPlayerService.playRadio();
         }
       }
@@ -393,11 +393,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
           updatePlaybackState(false);
         }
       } else {
-        // Радио: проверяем, играет ли радио
+        // РАДИО: Уточненная логика
         if (audioPlayerService.isRadioPlaying) {
+          // Радио играет - ставим на паузу
           await audioPlayerService.pauseRadio();
+        } else if (audioPlayerService.isRadioPaused) {
+          // Радио уже на паузе, ничего не делаем
+          debugPrint('Radio is already paused, ignoring pause command');
         } else {
-          debugPrint('Radio is not playing, ignoring pause command');
+          // Радио остановлено, ничего не делаем
+          debugPrint('Radio is stopped, ignoring pause command');
         }
       }
     } catch (e) {
