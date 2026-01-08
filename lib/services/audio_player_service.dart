@@ -87,6 +87,11 @@ class AudioPlayerService with ChangeNotifier {
       StreamController<bool>.broadcast();
   
   Stream<bool> get playbackStateStream => _playbackStateController.stream;
+
+  final StreamController<void> _uiUpdateController = 
+      StreamController<void>.broadcast();
+
+  Stream<void> get uiUpdateStream => _uiUpdateController.stream;
   
   // Добавьте этот геттер
   AudioHandler? get audioHandler => _audioHandler;
@@ -184,8 +189,14 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   void _notifyListeners() {
-    if (_isDisposed) return;
+    if (_isDisposed) {
+      debugPrint('⚠️ Cannot notify: service disposed');
+      return;
+    }
+    
+    debugPrint('🔄 Notifying listeners: isPlaying=$isPlaying, playerPlaying=${_player?.playing}');
     notifyListeners();
+    _uiUpdateController.add(null);
   }
 
   bool? get hasNetworkConnection {
@@ -868,13 +879,13 @@ Future<void> pauseRadio() async {
     debugPrint('pauseRadio called, player state: ${player?.playing}');
     
     if (player != null && player.playing) {
-      // ПРОСТО ставим на паузу, НЕ останавливаем и НЕ сбрасываем источник
       await player.pause();
       
-      // Обновляем состояние в background audio
+      // МГНОВЕННОЕ обновление состояния
+      _playbackStateController.add(false);
+      
       _updateBackgroundAudioPlaybackState(false);
       
-      // Останавливаем таймер метаданных для Web
       if (kIsWeb) {
         _stopWebMetadataPolling();
       }
@@ -884,6 +895,7 @@ Future<void> pauseRadio() async {
       debugPrint('Radio not playing or player null in pauseRadio');
     }
     
+    // Всегда уведомляем слушателей
     _notifyListeners();
   } catch (e) {
     debugPrint('Error pausing radio: $e');
@@ -1069,6 +1081,8 @@ Future<void> resumeRadio() async {
     }
   }
 
+  bool get mounted => !_isDisposed;
+
   Future<void> pause() async {
     try {
       final player = getPlayer();
@@ -1077,10 +1091,7 @@ Future<void> resumeRadio() async {
       if (player != null && player.playing) {
         await player.pause();
         
-        // Немедленно уведомляем AudioHandler
-        _updateBackgroundAudioPlaybackState(false);
-        
-        // Уведомляем все слушатели о изменении состояния
+        // МГНОВЕННОЕ обновление состояния
         _playbackStateController.add(false);
         
         if (_isPodcastMode) {
@@ -1090,11 +1101,10 @@ Future<void> resumeRadio() async {
           debugPrint('Radio paused');
         }
         
+        // Немедленно уведомляем слушателей
         _notifyListeners();
       } else {
         debugPrint('Pause ignored: player not playing or null');
-        // Даже если плеер не играет, все равно уведомляем AudioHandler
-        _updateBackgroundAudioPlaybackState(false);
       }
     } catch (e) {
       debugPrint('Error in pause: $e');

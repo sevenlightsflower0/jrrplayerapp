@@ -40,7 +40,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   late final ValueNotifier<double> _volumeNotifier;
   bool _isToggling = false;
 
-  @override
+ @override
   void initState() {
     super.initState();
     
@@ -52,6 +52,13 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         setState(() {
           _playingNotifier.value = isPlaying;
         });
+      }
+    });
+
+    // ДОБАВИТЬ: Подписка на прямые изменения состояния из AudioPlayerService
+    _audioService.addListener(() {
+      if (mounted) {
+        _syncPlayerState();
       }
     });
 
@@ -143,6 +150,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   Future<void> _togglePlayPause() async {
     debugPrint('🎵 Toggle play/pause called');
     
+    // Защита от двойного нажатия
+    if (_isToggling) return;
+    _isToggling = true;
+    
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
       
@@ -162,18 +173,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         }
       }
       
-      // Сразу обновляем UI состояние
-      if (mounted) {
-        setState(() {
-          _playingNotifier.value = !isCurrentlyPlaying;
-        });
-      }
+      // Сразу обновляем UI состояние через синхронизацию
+      _syncPlayerState();
       
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
-      
-      // Используем глобальный ключ Scaffold для показа SnackBar
       _showErrorSnackBar('Error: $e');
+    } finally {
+      _isToggling = false;
     }
   }
 
@@ -195,6 +202,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   void _syncPlayerState() {
+    if (!mounted) return;
+    
     final player = _audioService.getPlayer();
     if (player != null) {
       final isPlaying = player.playing;
@@ -207,11 +216,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
       
-      // ВАЖНО: обновляем notifier только если значение действительно изменилось
-      if (_playingNotifier.value != isPlaying) {
-        _playingNotifier.value = isPlaying;
-      }
+      // ВАЖНО: Использовать force-update для playingNotifier
+      _playingNotifier.value = isPlaying;
       
+      // Обновляем другие notifier только если значение изменилось
       if (_positionNotifier.value != position) {
         _positionNotifier.value = position;
       }
@@ -226,14 +234,12 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         _metadataNotifier.value = newMetadata;
       }
       
-      // Обновляем UI только если действительно нужно
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() {});
-          }
-        });
-      }
+      // Принудительное обновление UI
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
     }
   }
 
