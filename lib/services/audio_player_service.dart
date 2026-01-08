@@ -698,9 +698,7 @@ class AudioPlayerService with ChangeNotifier {
 
   bool _isRadioStopped = false;
 
-  bool get isPlaying {
-    return _player?.playing == true;
-  }
+  bool get isPlaying => _player?.playing ?? false;
 
   bool get isRadioPlaying {
     return !_isPodcastMode && !_isRadioStopped && (_player?.playing == true);
@@ -1094,6 +1092,9 @@ Future<void> resumeRadio() async {
         // МГНОВЕННОЕ обновление состояния
         _playbackStateController.add(false);
         
+        // Принудительная синхронизация background
+        _updateBackgroundAudioPlaybackState(false);
+        
         if (_isPodcastMode) {
           await _saveCurrentPosition();
           debugPrint('Podcast paused and position saved');
@@ -1101,7 +1102,9 @@ Future<void> resumeRadio() async {
           debugPrint('Radio paused');
         }
         
-        // Немедленно уведомляем слушателей
+        // Немедленно уведомляем слушателей (2 раза для надежности: сразу и с задержкой)
+        _notifyListeners();
+        await Future.delayed(const Duration(milliseconds: 50));
         _notifyListeners();
       } else {
         debugPrint('Pause ignored: player not playing or null');

@@ -391,16 +391,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
       } else {
         // РАДИО: Уточненная логика
         if (audioPlayerService.isRadioPlaying) {
-          // Радио играет - ставим на паузу
           await audioPlayerService.pauseRadio();
         } else if (audioPlayerService.isRadioPaused) {
-          // Радио уже на паузе, ничего не делаем
           debugPrint('Radio is already paused, ignoring pause command');
         } else {
-          // Радио остановлено, ничего не делаем
           debugPrint('Radio is stopped, ignoring pause command');
         }
       }
+      
       // NEW: Explicit sync after action
       _onAudioServiceUpdate();
     } catch (e) {
