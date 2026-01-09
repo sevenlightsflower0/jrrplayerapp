@@ -22,62 +22,7 @@ const Duration cacheDuration = Duration(hours: 1);
 
 enum ConnectionType { wifi, mobile, offline }
 
-// Оптимизированный парсер для медленных соединений
-List<PodcastEpisode> _parseRssQuickly(String responseBody, {int limit = 20}) {
-  try {
-    final document = xml.XmlDocument.parse(responseBody);
-    
-    // Быстрый поиск items
-    var items = document.findAllElements('item').toList();
-    if (items.isEmpty) {
-      final channel = document.findAllElements('channel').firstOrNull;
-      items = channel?.findElements('item').toList() ?? [];
-    }
-    
-    if (items.isEmpty) return [];
-
-    List<PodcastEpisode> podcasts = [];
-    int parsedCount = 0;
-
-    for (var item in items) {
-      if (parsedCount >= limit) break;
-      
-      try {
-        // Только необходимые поля для быстрой загрузки
-        final title = item.findElements('title').firstOrNull?.innerText.trim() ?? 'Без названия';
-        final audioUrl = item.findElements('enclosure').firstOrNull?.getAttribute('url') ?? '';
-        
-        if (audioUrl.isEmpty) continue;
-        
-        final guid = item.findElements('guid').firstOrNull?.innerText.trim() ?? '${parsedCount}_${DateTime.now().millisecondsSinceEpoch}';
-        
-        podcasts.add(PodcastEpisode(
-          id: guid,
-          title: title,
-          audioUrl: audioUrl,
-          imageUrl: null,
-          channelImageUrl: null,
-          description: '', // Пропускаем для скорости
-          duration: Duration.zero,
-          publishedDate: DateTime.now(),
-          channelId: 'jrr_podcast_channel',
-          channelTitle: 'J-Rock Radio Podcasts',
-        ));
-        
-        parsedCount++;
-      } catch (_) {
-        continue;
-      }
-    }
-
-    return podcasts;
-  } catch (e) {
-    debugPrint('Quick parse error: $e');
-    return [];
-  }
-}
-
-// Полный парсер для качественной загрузки
+// Полный парсер для качественной загрузки с извлечением изображений
 List<PodcastEpisode> _parseRssFull(String responseBody) {
   try {
     final document = xml.XmlDocument.parse(responseBody);
@@ -86,6 +31,26 @@ List<PodcastEpisode> _parseRssFull(String responseBody) {
     if (items.isEmpty) {
       final channel = document.findAllElements('channel').firstOrNull;
       items = channel?.findElements('item').toList() ?? [];
+    }
+
+    // Получаем изображение канала
+    String? channelImageUrl;
+    final channel = document.findAllElements('channel').firstOrNull;
+    if (channel != null) {
+      final channelImage = channel.findElements('image').firstOrNull;
+      if (channelImage != null) {
+        final channelUrlElement = channelImage.findElements('url').firstOrNull;
+        if (channelUrlElement != null) {
+          channelImageUrl = channelUrlElement.innerText.trim();
+        }
+      }
+      // Также пробуем itunes:image
+      if (channelImageUrl == null) {
+        final itunesImage = channel.findElements('itunes:image').firstOrNull;
+        if (itunesImage != null) {
+          channelImageUrl = itunesImage.getAttribute('href')?.trim();
+        }
+      }
     }
 
     List<PodcastEpisode> podcasts = [];
@@ -107,6 +72,49 @@ List<PodcastEpisode> _parseRssFull(String responseBody) {
         final guidElement = item.findElements('guid').firstOrNull;
         final pubDateElement = item.findElements('pubDate').firstOrNull;
 
+        // Извлечение изображения эпизода
+        String? episodeImageUrl;
+        
+        // 1. Пробуем itunes:image
+        final itunesImage = item.findElements('itunes:image').firstOrNull;
+        if (itunesImage != null) {
+          episodeImageUrl = itunesImage.getAttribute('href')?.trim();
+        }
+        
+        // 2. Пробуем media:thumbnail (обычно в видеозаписях)
+        if (episodeImageUrl == null) {
+          final mediaThumbnail = item.findElements('media:thumbnail').firstOrNull;
+          if (mediaThumbnail != null) {
+            episodeImageUrl = mediaThumbnail.getAttribute('url')?.trim();
+          }
+        }
+        
+        // 3. Пробуем media:content с типом image
+        if (episodeImageUrl == null) {
+          final mediaContents = item.findElements('media:content');
+          for (var content in mediaContents) {
+            final type = content.getAttribute('type');
+            final url = content.getAttribute('url');
+            if (type?.startsWith('image/') == true && url != null) {
+              episodeImageUrl = url.trim();
+              break;
+            }
+          }
+        }
+        
+        // 4. Пробуем enclosure с типом image
+        if (episodeImageUrl == null) {
+          final enclosures = item.findElements('enclosure');
+          for (var enclosure in enclosures) {
+            final type = enclosure.getAttribute('type');
+            final url = enclosure.getAttribute('url');
+            if (type?.startsWith('image/') == true && url != null) {
+              episodeImageUrl = url.trim();
+              break;
+            }
+          }
+        }
+
         // Упрощенный парсинг
         final description = descriptionElement?.innerText.trim() ?? '';
         final durationString = durationElement?.innerText.trim() ?? '0:00:00';
@@ -125,8 +133,8 @@ List<PodcastEpisode> _parseRssFull(String responseBody) {
           id: guid,
           title: title,
           audioUrl: audioUrl,
-          imageUrl: null,
-          channelImageUrl: null,
+          imageUrl: episodeImageUrl, // Используем найденное изображение эпизода
+          channelImageUrl: channelImageUrl, // Используем изображение канала
           description: description,
           duration: duration,
           publishedDate: publishedDate,
@@ -142,6 +150,78 @@ List<PodcastEpisode> _parseRssFull(String responseBody) {
     return podcasts;
   } catch (e) {
     debugPrint('Full parse error: $e');
+    return [];
+  }
+}
+
+// Быстрый парсер тоже обновим для извлечения изображений (но только самые простые способы)
+List<PodcastEpisode> _parseRssQuickly(String responseBody, {int limit = 20}) {
+  try {
+    final document = xml.XmlDocument.parse(responseBody);
+    
+    // Быстрый поиск items
+    var items = document.findAllElements('item').toList();
+    if (items.isEmpty) {
+      final channel = document.findAllElements('channel').firstOrNull;
+      items = channel?.findElements('item').toList() ?? [];
+    }
+    
+    if (items.isEmpty) return [];
+
+    // Быстрое получение изображения канала
+    String? channelImageUrl;
+    final channel = document.findAllElements('channel').firstOrNull;
+    if (channel != null) {
+      final itunesImage = channel.findElements('itunes:image').firstOrNull;
+      if (itunesImage != null) {
+        channelImageUrl = itunesImage.getAttribute('href')?.trim();
+      }
+    }
+
+    List<PodcastEpisode> podcasts = [];
+    int parsedCount = 0;
+
+    for (var item in items) {
+      if (parsedCount >= limit) break;
+      
+      try {
+        // Только необходимые поля для быстрой загрузки
+        final title = item.findElements('title').firstOrNull?.innerText.trim() ?? 'Без названия';
+        final audioUrl = item.findElements('enclosure').firstOrNull?.getAttribute('url') ?? '';
+        
+        if (audioUrl.isEmpty) continue;
+        
+        final guid = item.findElements('guid').firstOrNull?.innerText.trim() ?? '${parsedCount}_${DateTime.now().millisecondsSinceEpoch}';
+        
+        // Быстрое извлечение изображения (только itunes:image)
+        String? episodeImageUrl;
+        final itunesImage = item.findElements('itunes:image').firstOrNull;
+        if (itunesImage != null) {
+          episodeImageUrl = itunesImage.getAttribute('href')?.trim();
+        }
+        
+        podcasts.add(PodcastEpisode(
+          id: guid,
+          title: title,
+          audioUrl: audioUrl,
+          imageUrl: episodeImageUrl, // Добавляем изображение
+          channelImageUrl: channelImageUrl, // Изображение канала
+          description: '', // Пропускаем для скорости
+          duration: Duration.zero,
+          publishedDate: DateTime.now(),
+          channelId: 'jrr_podcast_channel',
+          channelTitle: 'J-Rock Radio Podcasts',
+        ));
+        
+        parsedCount++;
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return podcasts;
+  } catch (e) {
+    debugPrint('Quick parse error: $e');
     return [];
   }
 }
