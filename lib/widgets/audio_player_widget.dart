@@ -48,9 +48,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     
     // Подписываемся на поток состояний
     _audioService.playbackStateStream.listen((isPlaying) {
-      if (mounted && _playingNotifier.value != isPlaying) {
+      if (mounted) {
+        setState(() {
           _playingNotifier.value = isPlaying;
-        }
+        });
+      }
     });
 
     // ДОБАВИТЬ: Подписка на прямые изменения состояния из AudioPlayerService
@@ -92,12 +94,9 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     final player = _audioService.getPlayer();
     debugPrint('🎵 Player state: playing=${player?.playing}, position=${player?.position}');
 
-    // NEW: Привязываем _playingNotifier напрямую к playingStream для реального времени
-    _playingNotifier = _StreamValueNotifier<bool>(
-      player?.playingStream ?? Stream.value(false),
-      player?.playing ?? false,
-    );
-    
+    // Используем текущее состояние из сервиса как источник истины
+    _playingNotifier = ValueNotifier<bool>(_audioService.isPlaying);
+
     _positionNotifier = _StreamValueNotifier<Duration?>(
       player?.positionStream ?? Stream.value(Duration.zero),
       player?.position ?? Duration.zero,
@@ -217,10 +216,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
       
-      // ВАЖНО: Обновлять только если изменилось
-      if (_playingNotifier.value != isPlaying) {
-        _playingNotifier.value = isPlaying;
-      }
+      // ВАЖНО: Использовать force-update для playingNotifier
+      _playingNotifier.value = isPlaying;
       
       // Обновляем другие notifier только если значение изменилось
       if (_positionNotifier.value != position) {
