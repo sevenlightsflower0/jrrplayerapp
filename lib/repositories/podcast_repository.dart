@@ -1,9 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:jrrplayerapp/models/podcast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PodcastRepository with ChangeNotifier {
   final List<PodcastEpisode> _episodes = [];
   final Map<String, Duration> _durations = {};
+  final Map<String, PodcastEpisode> _episodeCache = {};
+  static const String _episodesCacheKey = 'episodes_cache';
   
   List<PodcastEpisode> get episodes => _episodes.map((episode) {
     final duration = _durations[episode.id];
@@ -12,22 +17,73 @@ class PodcastRepository with ChangeNotifier {
   
   void updateEpisodeDuration(String episodeId, Duration duration) {
     _durations[episodeId] = duration;
+    _episodeCache.remove(episodeId); // Инвалидируем кэш
     notifyListeners();
   }
 
   // Метод для добавления эпизодов в репозиторий
-  void setEpisodes(List<PodcastEpisode> episodes) {
+  Future<void> setEpisodes(List<PodcastEpisode> episodes) async {
     _episodes.clear();
     _episodes.addAll(episodes);
+    
+    // Кэшируем только первые 20 эпизодов для экономии памяти
+    _episodeCache.clear();
+    for (int i = 0; i < episodes.length && i < 20; i++) {
+      _episodeCache[episodes[i].id] = episodes[i];
+    }
+    
+    // Сохраняем в постоянное хранилище
+    await _saveToStorage();
+    
     notifyListeners();
   }
 
-  // Метод для получения эпизода по ID
-  PodcastEpisode? getEpisodeById(String id) {
+  Future<void> _saveToStorage() async {
     try {
-      return _episodes.firstWhere((episode) => episode.id == id);
+      final prefs = await SharedPreferences.getInstance();
+      final episodesJson = _episodes.map((e) => e.toJson()).toList();
+      final jsonString = jsonEncode(episodesJson);
+      await prefs.setString(_episodesCacheKey, jsonString);
     } catch (e) {
-      return null; // Возвращаем null если не найден
+      debugPrint('Error saving episodes to storage: $e');
+    }
+  }
+
+  Future<void> loadFromStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonString = prefs.getString(_episodesCacheKey);
+      if (jsonString != null) {
+        final List episodesJson = jsonDecode(jsonString);
+        _episodes.clear();
+        for (var json in episodesJson) {
+          _episodes.add(PodcastEpisode.fromJson(json));
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error loading episodes from storage: $e');
+    }
+  }
+
+  // Метод для получения эпизода по ID с кэшированием
+  PodcastEpisode? getEpisodeById(String id) {
+    // Сначала проверяем быстрый кэш
+    if (_episodeCache.containsKey(id)) {
+      return _episodeCache[id];
+    }
+    
+    // Если нет в кэше, ищем в основном списке
+    try {
+      final episode = _episodes.firstWhere((episode) => episode.id == id);
+      // Добавляем в кэш (с ограничением размера)
+      if (_episodeCache.length >= 20) {
+        _episodeCache.remove(_episodeCache.keys.first);
+      }
+      _episodeCache[id] = episode;
+      return episode;
+    } catch (e) {
+      return null;
     }
   }
   
@@ -87,6 +143,7 @@ class PodcastRepository with ChangeNotifier {
   void clear() {
     _episodes.clear();
     _durations.clear();
+    _episodeCache.clear();
     notifyListeners();
   }
 
@@ -100,34 +157,7 @@ class PodcastRepository with ChangeNotifier {
   void removeEpisode(String id) {
     _episodes.removeWhere((episode) => episode.id == id);
     _durations.remove(id);
+    _episodeCache.remove(id);
     notifyListeners();
-  }
-  
-  Future<List<PodcastEpisode>> getEpisodesPaginated({
-    required int page,
-    required int pageSize,
-    bool loadMore = false
-  }) async {
-    try {
-      // Если это первая загрузка, очищаем список
-      if (!loadMore) {
-        _episodes.clear();
-        _durations.clear();
-      }
-      
-      // В реальном приложении здесь будет запрос к API с параметрами page и pageSize
-      // Для примера, вернем пустой список
-      return [];
-    } catch (e) {
-      debugPrint('Error loading paginated episodes: $e');
-      return [];
-    }
-  }
-
-  // Метод для проверки, есть ли еще страницы
-  bool hasMoreEpisodes(int currentPage, int pageSize) {
-    // В реальном приложении проверяйте общее количество эпизодов
-    // Пока вернем true, если эпизодов меньше, чем ожидалось
-    return _episodes.length >= (currentPage * pageSize);
   }
 }

@@ -50,4 +50,35 @@ class PodcastEpisode {
       channelTitle: channelTitle ?? this.channelTitle,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'audioUrl': audioUrl,
+      'imageUrl': imageUrl,
+      'channelImageUrl': channelImageUrl,
+      'description': description,
+      'duration': duration?.inSeconds,
+      'publishedDate': publishedDate.toIso8601String(),
+      'channelId': channelId,
+      'channelTitle': channelTitle,
+    };
+  }
+
+  factory PodcastEpisode.fromJson(Map<String, dynamic> json) {
+    return PodcastEpisode(
+      id: json['id'],
+      title: json['title'],
+      audioUrl: json['audioUrl'],
+      imageUrl: json['imageUrl'],
+      channelImageUrl: json['channelImageUrl'],
+      description: json['description'],
+      duration: Duration(seconds: json['duration']),
+      publishedDate: DateTime.parse(json['publishedDate']),
+      channelId: json['channelId'],
+      channelTitle: json['channelTitle'],
+    );
+  }
+
 }
