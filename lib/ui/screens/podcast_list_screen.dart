@@ -9,6 +9,9 @@ import 'package:jrrplayerapp/widgets/podcast_item.dart';
 import 'package:flutter/foundation.dart';
 import 'package:jrrplayerapp/constants/strings.dart';
 
+const int initialPageSize = 10;
+const int loadMorePageSize = 10;
+
 // Функция для парсинга RSS в фоновом потоке
 List<PodcastEpisode> _parseRssInBackground(String responseBody) {
   try {
@@ -204,12 +207,34 @@ class PodcastListScreen extends StatefulWidget {
 class _PodcastListScreenState extends State<PodcastListScreen> {
   List<PodcastEpisode> podcasts = [];
   bool isLoading = true;
+  bool isLoadingMore = false;
+  bool hasMore = true;
+  int currentPage = 1;
+  final int pageSize = 10;
   String errorMessage = '';
+  
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _fetchPodcasts();
+    _scrollController.addListener(_scrollListener);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels >= 
+        _scrollController.position.maxScrollExtent - 200) {
+      if (!isLoadingMore && hasMore && !isLoading) {
+        _loadMorePodcasts();
+      }
+    }
   }
 
   Future<void> _fetchPodcasts() async {
@@ -217,17 +242,14 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
       setState(() {
         isLoading = true;
         errorMessage = '';
+        currentPage = 1;
+        podcasts.clear();
       });
 
-      debugPrint('Fetching podcasts from RSS feed...');
+      debugPrint('Fetching podcasts page $currentPage...');
       
-      // VERWENDE DIE KONSTANTEN AUS APPSTRINGS
       final rssUrl = await _getRssUrl();
-      
       final response = await http.get(Uri.parse(rssUrl));
-
-      debugPrint('Response status: ${response.statusCode}');
-      debugPrint('Response body length: ${response.body.length}');
 
       if (response.statusCode == 200) {
         final List<PodcastEpisode> fetchedPodcasts = await compute(
@@ -235,59 +257,88 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
           response.body
         );
 
-        debugPrint('Parsed ${fetchedPodcasts.length} podcasts');
-
-        // Сортируем по дате публикации (новые первыми)
         fetchedPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
-
-        // ОБНОВЛЯЕМ РЕПОЗИТОРИЙ С ИСПОЛЬЗОВАНИЕМ Context
+        
+        final initialPodcasts = fetchedPodcasts.take(pageSize).toList();
+        
         if (mounted) {
           final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
           podcastRepo.setEpisodes(fetchedPodcasts);
-        }
 
-        setState(() {
-          podcasts = fetchedPodcasts;
-          isLoading = false;
-        });
+          setState(() {
+            podcasts = initialPodcasts;
+            isLoading = false;
+            hasMore = fetchedPodcasts.length > pageSize;
+          });
+        }
       } else {
-        setState(() {
-          errorMessage = 'Ошибка загрузки: ${response.statusCode}';
-          isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            errorMessage = 'Ошибка загрузки: ${response.statusCode}';
+            isLoading = false;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Error fetching podcasts: $e');
-      setState(() {
-        errorMessage = 'Ошибка загрузки подкастов: $e';
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          errorMessage = 'Ошибка загрузки подкастов: $e';
+          isLoading = false;
+        });
+      }
     }
   }
 
-  Future<String> _getRssUrl() async {
-    const originalUrl = AppStrings.podcastRssOriginalUrl;
-    const proxies = AppStrings.corsProxies;
+  Future<void> _loadMorePodcasts() async {
+    if (isLoadingMore || !hasMore) return;
     
-    for (final proxy in proxies) {
-      try {
-        final url = '$proxy${Uri.encodeFull(originalUrl)}';
-        debugPrint('Trying RSS URL: $url');
+    if (!mounted) return;
+    
+    setState(() {
+      isLoadingMore = true;
+    });
+
+    try {
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (!mounted) return;
+      
+      final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
+      final allEpisodes = podcastRepo.getSortedEpisodes();
+      
+      final startIndex = currentPage * pageSize;
+      final endIndex = startIndex + pageSize;
+      
+      if (startIndex < allEpisodes.length) {
+        final morePodcasts = allEpisodes.sublist(
+          startIndex, 
+          endIndex < allEpisodes.length ? endIndex : allEpisodes.length
+        );
         
-        final response = await http.get(Uri.parse(url));
-        if (response.statusCode == 200) {
-          debugPrint('Success with proxy: $proxy');
-          return url;
-        } else {
-          debugPrint('Proxy $proxy returned status: ${response.statusCode}');
+        if (mounted) {
+          setState(() {
+            podcasts.addAll(morePodcasts);
+            currentPage++;
+            hasMore = endIndex < allEpisodes.length;
+          });
         }
-      } catch (e) {
-        debugPrint('Proxy $proxy failed: $e');
+      } else {
+        if (mounted) {
+          setState(() {
+            hasMore = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading more podcasts: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoadingMore = false;
+        });
       }
     }
-    
-    // Fallback: Verwende den ersten Proxy
-    return '${proxies.first}${Uri.encodeFull(originalUrl)}';
   }
 
   @override
@@ -353,17 +404,72 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
 
     return RefreshIndicator(
       onRefresh: _fetchPodcasts,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(8),
-        itemCount: podcasts.length,
-        // Добавляем ключи для лучшей производительности
-        itemBuilder: (context, index) {
-          return PodcastItem(
-            key: ValueKey(podcasts[index].id),
-            podcast: podcasts[index],
-          );
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (scrollNotification) {
+          if (scrollNotification is ScrollEndNotification) {
+            final metrics = scrollNotification.metrics;
+            if (metrics.pixels >= metrics.maxScrollExtent - 100) {
+              if (!isLoadingMore && hasMore) {
+                _loadMorePodcasts();
+              }
+            }
+          }
+          return false;
         },
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(8),
+          itemCount: podcasts.length + (hasMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == podcasts.length && hasMore) {
+              return _buildLoadingIndicator();
+            }
+            
+            return PodcastItem(
+              key: ValueKey(podcasts[index].id),
+              podcast: podcasts[index],
+            );
+          },
+        ),
       ),
     );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Center(
+        child: isLoadingMore
+            ? const CircularProgressIndicator()
+            : ElevatedButton(
+                onPressed: _loadMorePodcasts,
+                child: const Text('Загрузить еще'),
+              ),
+      ),
+    );
+  }
+
+  Future<String> _getRssUrl() async {
+    const originalUrl = AppStrings.podcastRssOriginalUrl;
+    const proxies = AppStrings.corsProxies;
+    
+    for (final proxy in proxies) {
+      try {
+        final url = '$proxy${Uri.encodeFull(originalUrl)}';
+        debugPrint('Trying RSS URL: $url');
+        
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode == 200) {
+          debugPrint('Success with proxy: $proxy');
+          return url;
+        } else {
+          debugPrint('Proxy $proxy returned status: ${response.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('Proxy $proxy failed: $e');
+      }
+    }
+    
+    return '${proxies.first}${Uri.encodeFull(originalUrl)}';
   }
 }

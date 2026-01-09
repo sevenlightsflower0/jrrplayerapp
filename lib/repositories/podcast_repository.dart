@@ -102,4 +102,32 @@ class PodcastRepository with ChangeNotifier {
     _durations.remove(id);
     notifyListeners();
   }
+  
+  Future<List<PodcastEpisode>> getEpisodesPaginated({
+    required int page,
+    required int pageSize,
+    bool loadMore = false
+  }) async {
+    try {
+      // Если это первая загрузка, очищаем список
+      if (!loadMore) {
+        _episodes.clear();
+        _durations.clear();
+      }
+      
+      // В реальном приложении здесь будет запрос к API с параметрами page и pageSize
+      // Для примера, вернем пустой список
+      return [];
+    } catch (e) {
+      debugPrint('Error loading paginated episodes: $e');
+      return [];
+    }
+  }
+
+  // Метод для проверки, есть ли еще страницы
+  bool hasMoreEpisodes(int currentPage, int pageSize) {
+    // В реальном приложении проверяйте общее количество эпизодов
+    // Пока вернем true, если эпизодов меньше, чем ожидалось
+    return _episodes.length >= (currentPage * pageSize);
+  }
 }
