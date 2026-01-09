@@ -40,12 +40,12 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   late final ValueNotifier<double> _volumeNotifier;
   bool _isToggling = false;
 
- @override
+  @override
   void initState() {
     super.initState();
-    
+
     _audioService = Provider.of<AudioPlayerService>(context, listen: false);
-    
+
     // Подписываемся на поток состояний
     _audioService.playbackStateStream.listen((isPlaying) {
       if (mounted) {
@@ -55,20 +55,13 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       }
     });
 
-    // ДОБАВИТЬ: Подписка на прямые изменения состояния из AudioPlayerService
-    _audioService.addListener(() {
-      if (mounted) {
-        _syncPlayerState();
-      }
-    });
-
     debugPrint('🎵 AudioPlayerWidget initState');
     debugPrint('🎵 Initial metadata - Title: "${_audioService.currentMetadata?.title}", Artist: "${_audioService.currentMetadata?.artist}"');
     debugPrint('🎵 Current episode: ${_audioService.currentEpisode?.title}');
     debugPrint('🎵 Is podcast mode: ${_audioService.isPodcastMode}');
     debugPrint('🎵 AudioHandler available: ${_audioService.audioHandler != null}');
     debugPrint('🎵 Initial playing state: ${_audioService.isPlaying}');
-    
+
     // Восстанавливаем состояние из сервиса при инициализации
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -78,7 +71,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
     _initializeNotifiers();
     _setupDurationSync();
-      
+
     // Подписываемся на изменения состояния плеера напрямую
     _setupPlayerStateListener();
   }
@@ -130,17 +123,17 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   void _onAudioServiceUpdate() {
     if (!mounted) return;
-    
+
     debugPrint('🎵 AudioService update received');
-    
+
     // Синхронизируем состояние плеера при любом обновлении сервиса
     _syncPlayerState();
-    
+
     // Обновляем метаданные
     final newMetadata = _audioService.currentMetadata;
     _metadataNotifier.value = newMetadata;
     _imageUpdateNotifier.value++;
-    
+
     // Принудительное обновление UI
     if (mounted) {
       setState(() {});
@@ -149,20 +142,16 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Future<void> _togglePlayPause() async {
     debugPrint('🎵 Toggle play/pause called');
-    
-    // Защита от двойного нажатия
-    if (_isToggling) return;
-    _isToggling = true;
-    
+
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
-      
+
       if (isCurrentlyPlaying) {
         debugPrint('🎵 Switching to PAUSE');
         await _audioService.pause();
       } else {
         debugPrint('🎵 Switching to PLAY');
-        
+
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
           final player = _audioService.getPlayer();
           if (player != null) {
@@ -172,15 +161,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
           await _audioService.playRadio();
         }
       }
-      
-      // Сразу обновляем UI состояние через синхронизацию
-      _syncPlayerState();
-      
+
+      // Сразу обновляем UI состояние
+      if (mounted) {
+        setState(() {
+          _playingNotifier.value = !isCurrentlyPlaying;
+        });
+      }
+
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
+      
+      // Используем глобальный ключ Scaffold для показа SnackBar
       _showErrorSnackBar('Error: $e');
-    } finally {
-      _isToggling = false;
     }
   }
 
@@ -202,44 +195,48 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   void _syncPlayerState() {
-    if (!mounted) return;
-    
+
+
     final player = _audioService.getPlayer();
     if (player != null) {
       final isPlaying = player.playing;
       final position = player.position;
       final duration = player.duration;
-      
+
       debugPrint('🎵 Syncing player state:');
       debugPrint('🎵   Playing: $isPlaying');
       debugPrint('🎵   Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
-      
-      // ВАЖНО: Использовать force-update для playingNotifier
-      _playingNotifier.value = isPlaying;
-      
-      // Обновляем другие notifier только если значение изменилось
+
+      // ВАЖНО: обновляем notifier только если значение действительно изменилось
+      if (_playingNotifier.value != isPlaying) {
+        _playingNotifier.value = isPlaying;
+      }
+
+
       if (_positionNotifier.value != position) {
         _positionNotifier.value = position;
       }
-      
+
       if (_durationNotifier.value != duration) {
         _durationNotifier.value = duration;
       }
-      
+
       // Обновляем метаданные
       final newMetadata = _audioService.currentMetadata;
       if (_metadataNotifier.value != newMetadata) {
         _metadataNotifier.value = newMetadata;
       }
-      
-      // Принудительное обновление UI
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {});
-        }
-      });
+
+      // Обновляем UI только если действительно нужно
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      }
     }
   }
 
@@ -306,7 +303,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                       color: _audioService.isPodcastMode ? Colors.white : Colors.grey,
                     ),
                     SizedBox(width: mediumSpacing),
-                    
+
                     // Кнопка воспроизведения/паузы
                     ValueListenableBuilder<bool>(
                       valueListenable: _playingNotifier,
@@ -325,7 +322,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                       },
                     ),
                     SizedBox(width: mediumSpacing),
-                    
+
                     // Кнопка "Следующий"
                     IconButton(
                       icon: const Icon(Icons.skip_next, size: 30),
@@ -352,7 +349,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                         tooltip: 'Тише',
                       ),
                       SizedBox(width: smallSpacing),
-                      
+
                       // Ползунок громкости
                       Expanded(
                         child: ValueListenableBuilder<double>(
@@ -376,7 +373,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                         ),
                       ),
                       SizedBox(width: smallSpacing),
-                      
+
                       // Кнопка "Громче"
                       IconButton(
                         icon: const Icon(Icons.volume_up),
@@ -389,7 +386,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   ),
                 ),
                 SizedBox(height: largeSpacing),
-              
+
                 // Прогресс-бар (только для подкастов)
                 if (_audioService.isPodcastMode) ...[
                   SizedBox(
@@ -416,7 +413,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                           },
                         ),
                         SizedBox(height: smallSpacing),
-                        
+
                         ValueListenableBuilder2<Duration?, Duration?>(
                           first: _positionNotifier,
                           second: _durationNotifier,
@@ -452,7 +449,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   ),
                   SizedBox(height: largeSpacing),
                 ],
-                
+
                 // Название трека с названием альбома
                 ValueListenableBuilder<AudioMetadata?>(
                   valueListenable: _metadataNotifier,
@@ -461,7 +458,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     if (metadata?.album != null && metadata!.album!.isNotEmpty) {
                       trackText = '${metadata.title} - ${metadata.album}';
                     }
-                    
+
                     return Padding(
                       padding: EdgeInsets.symmetric(horizontal: largeSpacing),
                       child: Text(
@@ -478,7 +475,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   },
                 ),
                 SizedBox(height: mediumSpacing),
-                
+
                 // Обложка альбома
                 ValueListenableBuilder<int>(
                   valueListenable: _imageUpdateNotifier,
@@ -509,7 +506,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   },
                 ),
                 SizedBox(height: mediumSpacing),
-                
+
                 // Исполнитель
                 ValueListenableBuilder<AudioMetadata?>(
                   valueListenable: _metadataNotifier,
@@ -526,7 +523,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     );
                   },
                 ),
-                
+
                 SizedBox(height: largeSpacing),
               ],
             ),
@@ -538,7 +535,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Widget _buildCoverImage(AudioMetadata? metadata, int imageVersion) {
     String? imageUrl = _getImageUrl(metadata);
-    
+
     if (imageUrl != null && imageUrl.isNotEmpty) {
       return Image.network(
         imageUrl,
@@ -579,7 +576,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     if (metadata?.artUrl != null && metadata!.artUrl!.isNotEmpty) {
       return metadata.artUrl;
     }
-    
+
     final episode = _audioService.currentEpisode;
     if (episode != null) {
       if (episode.imageUrl != null && episode.imageUrl!.isNotEmpty) {
@@ -589,7 +586,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         return episode.channelImageUrl;
       }
     }
-    
+
     return null;
   }
 
@@ -603,7 +600,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   String _format(Duration d) {
     final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    
+
     if (d.inHours > 0) {
       final hours = d.inHours.toString().padLeft(2, '0');
       return '$hours:$minutes:$seconds';
