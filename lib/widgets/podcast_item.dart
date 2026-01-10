@@ -1,3 +1,4 @@
+import 'dart:async'; // Добавляем импорт для StreamSubscription
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:jrrplayerapp/repositories/podcast_repository.dart';
@@ -6,6 +7,7 @@ import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/models/podcast.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:just_audio/just_audio.dart'; // Добавляем импорт для ProcessingState
 
 class PodcastItem extends StatefulWidget {
   final PodcastEpisode podcast;
@@ -23,6 +25,7 @@ class _PodcastItemState extends State<PodcastItem> {
   Duration _currentPosition = Duration.zero;
   late AudioPlayerService _audioService;
   Duration? _cachedDuration;
+  StreamSubscription<Duration>? _positionSubscription;
 
   @override
   void initState() {
@@ -61,6 +64,7 @@ class _PodcastItemState extends State<PodcastItem> {
   @override
   void dispose() {
     _audioService.removeListener(_onAudioServiceUpdate);
+    _positionSubscription?.cancel();
     super.dispose();
   }
 
@@ -125,9 +129,14 @@ class _PodcastItemState extends State<PodcastItem> {
     final newPosition = Duration(
       milliseconds: (value * actualDuration.inMilliseconds).round()
     );
+    
+    // Сразу обновляем UI
     setState(() {
       _currentPosition = newPosition;
+      _sliderValue = value;
     });
+    
+    // Ищем в аудио
     audioService.seekPodcast(newPosition);
   }
 
@@ -171,10 +180,25 @@ class _PodcastItemState extends State<PodcastItem> {
     return null;
   }
 
+  // Определяем состояние воспроизведения для конкретного подкаста
+  bool _isPodcastPlaying(AudioPlayerService audioService) {
+    return audioService.currentEpisode?.id == widget.podcast.id && 
+           audioService.isPodcastMode &&
+           audioService.playerState?.playing == true;
+  }
+
+  bool _isPodcastBuffering(AudioPlayerService audioService) {
+    return audioService.currentEpisode?.id == widget.podcast.id && 
+           audioService.isPodcastMode &&
+           (audioService.playerState?.processingState == ProcessingState.buffering ||
+            audioService.playerState?.processingState == ProcessingState.loading ||
+            _audioService.isBuffering); // Используем флаг isBuffering из сервиса
+  }
+
   @override
   Widget build(BuildContext context) {
-    final audioService = Provider.of<AudioPlayerService>(context);
-    final podcastRepo = Provider.of<PodcastRepository>(context);
+    final audioService = Provider.of<AudioPlayerService>(context, listen: true);
+    final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
     
     // Получаем эпизод из репозитория
     final podcast = podcastRepo.getEpisodeById(widget.podcast.id);
@@ -183,146 +207,155 @@ class _PodcastItemState extends State<PodcastItem> {
       return const SizedBox();
     }
     
-    final bool isPlaying = audioService.isPlayingPodcast(widget.podcast);
+    final bool isPlaying = _isPodcastPlaying(audioService);
+    final bool isBuffering = _isPodcastBuffering(audioService);
     final Duration? actualDuration = _getActualDuration();
 
-    return StreamBuilder<Duration>(
-      stream: isPlaying ? audioService.positionStream : null,
-      builder: (context, snapshot) {
-        
-        // Обновляем текущую позицию если не в процессе перетаскивания
-        if (!_isSeeking && snapshot.hasData) {
-          _currentPosition = snapshot.data!;
+    // Подписываемся на поток позиции только если этот подкаст играет
+    if (isPlaying && _positionSubscription == null) {
+      _positionSubscription = audioService.positionStream.listen((position) {
+        if (!_isSeeking && mounted) {
+          setState(() {
+            _currentPosition = position;
+            if (actualDuration != null && actualDuration.inMilliseconds > 0) {
+              _sliderValue = position.inMilliseconds / actualDuration.inMilliseconds;
+            }
+          });
         }
+      });
+    } else if (!isPlaying && _positionSubscription != null) {
+      _positionSubscription?.cancel();
+      _positionSubscription = null;
+    }
 
-        final progress = actualDuration?.inMilliseconds != null && actualDuration!.inMilliseconds > 0 
-            ? _currentPosition.inMilliseconds / actualDuration.inMilliseconds 
-            : 0.0;
+    final progress = actualDuration?.inMilliseconds != null && actualDuration!.inMilliseconds > 0 
+        ? _currentPosition.inMilliseconds / actualDuration.inMilliseconds 
+        : 0.0;
 
-        // Обновляем значение слайдера, если не в процессе перетаскивания
-        if (!_isSeeking) {
-          _sliderValue = progress.clamp(0.0, 1.0);
-        }
+    // Обновляем значение слайдера, если не в процессе перетаскивания
+    if (!_isSeeking) {
+      _sliderValue = progress.clamp(0.0, 1.0);
+    }
 
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          elevation: 2,
-          color: const Color.fromRGBO(255, 255, 255, 0.3),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      elevation: 2,
+      color: const Color.fromRGBO(255, 255, 255, 0.3),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    _buildImage(),
-                    const SizedBox(width: 8), // Увеличил отступ для лучшего вида
-                    Expanded(
-                      child: Text(
-                        widget.podcast.title,
-                        style: const TextStyle(
-                          color: Colors.white, 
-                          fontSize: 12,
-                          height: 1.2 // Уменьшаем межстрочный интервал
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                _buildImage(),
+                const SizedBox(width: 8), // Увеличил отступ для лучшего вида
+                Expanded(
+                  child: Text(
+                    widget.podcast.title,
+                    style: const TextStyle(
+                      color: Colors.white, 
+                      fontSize: 12,
+                      height: 1.2 // Уменьшаем межстрочный интервал
                     ),
-                    _isLoading
-                        ? const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: SizedBox(
-                              width: 16, // Уменьшил размер индикатора
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            ),
-                          )
-                        : IconButton(
-                            icon: SvgPicture.asset(
-                              isPlaying 
-                                ? 'assets/icons/icon_pause_podcast.svg'
-                                : 'assets/icons/icon_play_podcast.svg',
-                              width: 20,
-                              height: 20,
-                              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                            ),
-                            onPressed: () => _togglePlayPause(audioService),
-                            padding: EdgeInsets.zero, // Уменьшаем отступы
-                            constraints: const BoxConstraints(
-                              minWidth: 36,
-                              minHeight: 36,
-                            ),
-                          ),
-                  ],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+                _isLoading || isBuffering
+                    ? const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: SizedBox(
+                          width: 16, // Уменьшил размер индикатора
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                      )
+                    : IconButton(
+                        icon: SvgPicture.asset(
+                          isPlaying 
+                            ? 'assets/icons/icon_pause_podcast.svg'
+                            : 'assets/icons/icon_play_podcast.svg',
+                          width: 20,
+                          height: 20,
+                          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                        ),
+                        onPressed: () => _togglePlayPause(audioService),
+                        padding: EdgeInsets.zero, // Уменьшаем отступы
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                      ),
+              ],
+            ),
 
-                const SizedBox(height: 6), // Уменьшил отступ
-                Row(
-                  children: [
-                    // Проигранное время (слева)
-                    Text(
-                      _formatDuration(_currentPosition),
-                      style: const TextStyle(
-                        color: Colors.white, 
-                        fontSize: 10, // Уменьшил шрифт
-                        fontWeight: FontWeight.bold
-                      ),
+            const SizedBox(height: 6), // Уменьшил отступ
+            Row(
+              children: [
+                // Проигранное время (слева)
+                Text(
+                  _formatDuration(_currentPosition),
+                  style: const TextStyle(
+                    color: Colors.white, 
+                    fontSize: 10, // Уменьшил шрифт
+                    fontWeight: FontWeight.bold
+                  ),
+                ),
+                const SizedBox(width: 6), // Уменьшил отступ
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 6, // Уменьшил высоту трека
+                      thumbShape: const CustomVerticalThumbShape(), // Убрал подчеркивание
+                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12), // Уменьшил область касания
+                      activeTrackColor: AppColors.customWhite,
+                      inactiveTrackColor: AppColors.customWhiteTransp,
+                      thumbColor: Colors.white,
+                      activeTickMarkColor: AppColors.customBackgr, 
+                      inactiveTickMarkColor: Colors.transparent,
                     ),
-                    const SizedBox(width: 6), // Уменьшил отступ
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 6, // Уменьшил высоту трека
-                          thumbShape: const CustomVerticalThumbShape(), // Убрал подчеркивание
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12), // Уменьшил область касания
-                          activeTrackColor: AppColors.customWhite,
-                          inactiveTrackColor: AppColors.customWhiteTransp,
-                          thumbColor: Colors.white,
-                          activeTickMarkColor: AppColors.customBackgr, 
-                          inactiveTickMarkColor: Colors.transparent,
-                        ),
-                        child: Slider(
-                          value: _sliderValue,
-                          min: 0.0,
-                          max: 1.0,
-                          onChanged: (value) {
+                    child: Slider(
+                      value: _sliderValue,
+                      min: 0.0,
+                      max: 1.0,
+                      onChanged: actualDuration != null && actualDuration.inMilliseconds > 0
+                          ? (value) {
+                              setState(() {
+                                _isSeeking = true;
+                                _sliderValue = value;
+                              });
+                            }
+                          : null,
+                      onChangeEnd: actualDuration != null && actualDuration.inMilliseconds > 0
+                        ? (value) {
+                            _seekPodcast(value, audioService);
                             setState(() {
-                              _isSeeking = true;
-                              _sliderValue = value;
+                              _isSeeking = false;
                             });
-                          },
-                          onChangeEnd: actualDuration != null && actualDuration.inMilliseconds > 0
-                            ? (value) {
-                                _seekPodcast(value, audioService);
-                                setState(() {
-                                  _isSeeking = false;
-                                });
-                              }
-                            : null,
-                        ),
-                      ),
+                          }
+                        : null,
                     ),
-                    const SizedBox(width: 6), // Уменьшил отступ
-                    // Оставшееся время (справа)
-                    Text(
-                      _formatDuration(actualDuration),
-                      style: const TextStyle(
-                        color: Colors.white, 
-                        fontSize: 10, // Уменьшил шрифт
-                        fontWeight: FontWeight.bold
-                      ),
-                    ),
-                  ],
+                  ),
+                ),
+                const SizedBox(width: 6), // Уменьшил отступ
+                // Оставшееся время (справа)
+                Text(
+                  _formatDuration(actualDuration),
+                  style: const TextStyle(
+                    color: Colors.white, 
+                    fontSize: 10, // Уменьшил шрифт
+                    fontWeight: FontWeight.bold
+                  ),
                 ),
               ],
             ),
-          ),
-        );
-      }
+          ],
+        ),
+      ),
     );
   }
 }

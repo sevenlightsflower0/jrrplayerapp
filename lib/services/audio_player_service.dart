@@ -247,8 +247,20 @@ class AudioPlayerService with ChangeNotifier {
           _playerState = state;
           _isBuffering = state.processingState == ProcessingState.buffering;
 
-          debugPrint('Player state changed: playing=${state.playing}, '
-                    'processing=${state.processingState}');
+          debugPrint('Player state changed: '
+            'playing=${state.playing}, '
+            'processing=${state.processingState}, '
+            'isBuffering=$_isBuffering, '
+            'isPodcastMode=$_isPodcastMode');
+          
+          // Если в режиме подкаста и состояние изменилось, сохраняем позицию
+          if (_isPodcastMode && _currentEpisode != null) {
+            if (state.processingState == ProcessingState.ready && 
+                state.playing == false) {
+              // Автосохранение при паузе
+              _saveCurrentPosition();
+            }
+          }
 
           // Уведомляем о ВСЕХ изменениях состояния
           _notifyListeners();
@@ -952,6 +964,7 @@ Future<void> resumeRadio() async {
       _stopWebMetadataPolling();
     }
 
+    // Создаем новую операцию для отмены предыдущей
     final operationId = DateTime.now().millisecondsSinceEpoch.toString();
     _currentOperationId = operationId;
     _lastWebTrackId = null;
@@ -993,6 +1006,7 @@ Future<void> resumeRadio() async {
 
       if (_currentOperationId != operationId) return;
 
+      // Ищем сохраненную позицию
       final position = await _getSavedPosition(episode.id);
       debugPrint('Resuming podcast from position: ${position.inSeconds}s');
 
@@ -1000,30 +1014,53 @@ Future<void> resumeRadio() async {
 
       if (_currentOperationId != operationId) return;
 
-      // Используем MediaItem как тег
+      // Создаем источник аудио с тегом MediaItem
       final audioSource = AudioSource.uri(
         Uri.parse(episode.audioUrl),
         tag: mediaItem, // Используем MediaItem
       );
 
+      // Устанавливаем источник
       await _player?.setAudioSource(audioSource);
+
 
       if (position > Duration.zero) {
         await _player?.seek(position);
       }
 
+      // Начинаем воспроизведение
       await _player?.play();
 
-      // Начинаем воспроизведение в background audio
-      await _audioHandler?.play();
+      // Обновляем background audio
+      if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+        (_audioHandler as AudioPlayerHandler).updateMetadata(
+          AudioMetadata(
+            title: episode.title,
+            artist: episode.channelTitle,
+            album: 'J-Rock Radio Podcast',
+            artUrl: episode.imageUrl ?? episode.channelImageUrl,
+          )
+        );
+        (_audioHandler as AudioPlayerHandler).updatePlaybackState(true);
+      }
+
+      _playbackStateController.add(true);
+      _notifyListeners();
 
       debugPrint('Podcast playback started: ${episode.title}');
-      _notifyListeners();
+
     } catch (e, stackTrace) {
       if (_currentOperationId != operationId) return;
-      developer.log('Error playing podcast', error: e, stackTrace: stackTrace);
+      
+      debugPrint('Error playing podcast: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      // Сбрасываем состояние при ошибке
+      _isBuffering = false;
       _notifyListeners();
+      
       rethrow;
+
     }
   }
 
