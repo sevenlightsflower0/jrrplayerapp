@@ -573,7 +573,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   String? _getImageUrl(AudioMetadata? metadata) {
-    if (metadata?.artUrl != null && metadata!.artUrl!.isNotEmpty) {
+    if (metadata?.artUrl != null && metadata!.artUrl.isNotEmpty) {
       return metadata.artUrl;
     }
 

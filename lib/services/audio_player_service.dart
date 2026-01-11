@@ -14,17 +14,19 @@ import 'package:jrrplayerapp/services/audio_player_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class AudioMetadata {
+  static const String defaultCoverUrl = 'images/default_cover.png';
+
   final String title;
   final String artist;
   final String? album;
-  final String? artUrl;
+  final String artUrl;
 
   const AudioMetadata({
     required this.title,
     required this.artist,
     this.album,
-    this.artUrl,
-  });
+    String? artUrl, // Параметр nullable, но инициализируется дефолтным значением
+  }) : artUrl = artUrl ?? defaultCoverUrl; // Используем дефолтную обложку если null
 
   @override
   bool operator ==(Object other) =>
@@ -42,7 +44,7 @@ class AudioMetadata {
 
   @override
   String toString() {
-    return 'AudioMetadata(title: $title, artist: $artist, album: $album, artUrl: ${artUrl != null ? "has image" : "no image"})';
+    return 'AudioMetadata(title: $title, artist: $artist, album: $album, artUrl: $artUrl)';
   }
 }
 

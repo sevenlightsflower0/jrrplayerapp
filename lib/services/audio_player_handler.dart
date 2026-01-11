@@ -185,7 +185,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? '',
-        artUri: metadata.artUrl != null ? Uri.parse(metadata.artUrl!) : null,
+        artUri: Uri.parse(metadata.artUrl),
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
@@ -198,7 +198,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? _currentMediaItem!.album,
-        artUri: metadata.artUrl != null ? Uri.parse(metadata.artUrl!) : _currentMediaItem!.artUri,
+        artUri: Uri.parse(metadata.artUrl),
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
