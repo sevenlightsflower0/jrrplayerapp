@@ -353,18 +353,29 @@ class AudioPlayerHandler extends BaseAudioHandler {
         }
       } else {
         // РАДИО: Уточненная логика
+        debugPrint('Radio play - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
+                  'isRadioPaused: ${audioPlayerService.isRadioPaused}, '
+                  'isRadioStopped: ${audioPlayerService.isRadioStopped}');
+        
         if (audioPlayerService.isRadioPlaying) {
           // Радио уже играет, ничего не делаем
           debugPrint('Radio is already playing, ignoring play command');
+          updatePlaybackState(true); // Все равно обновляем состояние
         } else if (audioPlayerService.isRadioPaused) {
           // Радио на паузе - возобновляем (НЕ создаем новый источник)
           await audioPlayerService.resumeRadio();
-        } else {
-          // Радио остановлено или еще не запущено
+          updatePlaybackState(true);
+        } else if (audioPlayerService.isRadioStopped) {
+          // Радио остановлено - запускаем заново
           await audioPlayerService.playRadio();
+          updatePlaybackState(true);
+        } else {
+          // Радио в неопределенном состоянии - запускаем
+          await audioPlayerService.playRadio();
+          updatePlaybackState(true);
         }
       }
-      // NEW: Explicit sync after action
+      // Явная синхронизация после действия
       _onAudioServiceUpdate();
     } catch (e) {
       debugPrint('Error in background play: $e');
@@ -389,19 +400,32 @@ class AudioPlayerHandler extends BaseAudioHandler {
           updatePlaybackState(false);
         }
       } else {
-        // РАДИО: Уточненная логика
+        // РАДИО: Уточненная логика с учетом всех состояний
+        debugPrint('Radio pause - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
+                  'isRadioPaused: ${audioPlayerService.isRadioPaused}, '
+                  'isRadioStopped: ${audioPlayerService.isRadioStopped}');
+        
         if (audioPlayerService.isRadioPlaying) {
           // Радио играет - ставим на паузу
           await audioPlayerService.pauseRadio();
+          updatePlaybackState(false); // Явно обновляем состояние
         } else if (audioPlayerService.isRadioPaused) {
-          // Радио уже на паузе, ничего не делаем
-          debugPrint('Radio is already paused, ignoring pause command');
+          // Радио уже на паузе - ставим в состояние "остановлено"
+          debugPrint('Radio is paused, stopping completely');
+          await audioPlayerService.stopRadio();
+          updatePlaybackState(false); // Обновляем состояние
+        } else if (audioPlayerService.isRadioStopped) {
+          // Радио уже остановлено - ничего не делаем
+          debugPrint('Radio is already stopped, ignoring pause command');
+          updatePlaybackState(false); // Все равно обновляем состояние
         } else {
-          // Радио остановлено, ничего не делаем
-          debugPrint('Radio is stopped, ignoring pause command');
+          // Радио в неопределенном состоянии - останавливаем
+          debugPrint('Radio in unknown state, stopping');
+          await audioPlayerService.stopRadio();
+          updatePlaybackState(false);
         }
       }
-      // NEW: Explicit sync after action
+      // Явная синхронизация после действия
       _onAudioServiceUpdate();
     } catch (e) {
       debugPrint('Error in background pause: $e');
@@ -424,7 +448,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
         // Для радио останавливаем полностью
         await audioPlayerService.stopRadio();
       }
-      // NEW: Explicit sync after action
+      // Обновляем состояние в UI
+      updatePlaybackState(false);
+      // Дополнительная синхронизация
       _onAudioServiceUpdate();
     } catch (e) {
       debugPrint('Error in background stop: $e');

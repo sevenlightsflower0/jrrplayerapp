@@ -124,15 +124,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   void _onAudioServiceUpdate() {
     if (!mounted) return;
 
-    debugPrint('🎵 AudioService update received');
+    debugPrint('🎵 AudioService update received - isPlaying: ${_audioService.isPlaying}, '
+              'isRadioPlaying: ${_audioService.isRadioPlaying}, '
+              'isRadioPaused: ${_audioService.isRadioPaused}');
 
-    // Синхронизируем состояние плеера при любом обновлении сервиса
+    // Принудительная синхронизация состояния плеера
     _syncPlayerState();
 
     // Обновляем метаданные
     final newMetadata = _audioService.currentMetadata;
-    _metadataNotifier.value = newMetadata;
-    _imageUpdateNotifier.value++;
+    if (_metadataNotifier.value != newMetadata) {
+      _metadataNotifier.value = newMetadata;
+      _imageUpdateNotifier.value++;
+    }
 
     // Принудительное обновление UI
     if (mounted) {
@@ -195,8 +199,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   void _syncPlayerState() {
-
-
     final player = _audioService.getPlayer();
     if (player != null) {
       final isPlaying = player.playing;
@@ -206,15 +208,15 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵 Syncing player state:');
       debugPrint('🎵   Playing: $isPlaying');
       debugPrint('🎵   Mode: ${_audioService.isPodcastMode ? 'podcast' : 'radio'}');
+      debugPrint('🎵   isRadioPlaying: ${_audioService.isRadioPlaying}');
+      debugPrint('🎵   isRadioPaused: ${_audioService.isRadioPaused}');
       debugPrint('🎵   Position: $position');
       debugPrint('🎵   Duration: $duration');
 
-      // ВАЖНО: обновляем notifier только если значение действительно изменилось
-      if (_playingNotifier.value != isPlaying) {
-        _playingNotifier.value = isPlaying;
-      }
-
-
+      // ВАЖНО: обновляем notifier даже если значение не изменилось
+      // чтобы гарантировать обновление UI
+      _playingNotifier.value = isPlaying;
+      
       if (_positionNotifier.value != position) {
         _positionNotifier.value = position;
       }
@@ -229,13 +231,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         _metadataNotifier.value = newMetadata;
       }
 
-      // Обновляем UI только если действительно нужно
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() {});
-          }
-        });
+      // Обновляем громкость
+      final currentVolume = player.volume;
+      if ((_volumeNotifier.value - currentVolume).abs() > 0.01) {
+        _volumeNotifier.value = currentVolume;
       }
     }
   }
