@@ -343,40 +343,20 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      final player = audioPlayerService.getPlayer();
-      
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        // Подкаст: просто возобновляем
+        final player = audioPlayerService.getPlayer();
         if (player != null && !player.playing) {
           await player.play();
-          updatePlaybackState(true);
         }
       } else {
-        // РАДИО: Уточненная логика
-        debugPrint('Radio play - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
-                  'isRadioPaused: ${audioPlayerService.isRadioPaused}, '
-                  'isRadioStopped: ${audioPlayerService.isRadioStopped}');
-        
-        if (audioPlayerService.isRadioPlaying) {
-          // Радио уже играет, ничего не делаем
-          debugPrint('Radio is already playing, ignoring play command');
-          updatePlaybackState(true); // Все равно обновляем состояние
-        } else if (audioPlayerService.isRadioPaused) {
-          // Радио на паузе - возобновляем (НЕ создаем новый источник)
-          await audioPlayerService.resumeRadio();
-          updatePlaybackState(true);
-        } else if (audioPlayerService.isRadioStopped) {
-          // Радио остановлено - запускаем заново
-          await audioPlayerService.playRadio();
-          updatePlaybackState(true);
-        } else {
-          // Радио в неопределенном состоянии - запускаем
-          await audioPlayerService.playRadio();
-          updatePlaybackState(true);
-        }
+        // РАДИО: Простая логика - всегда вызываем playRadio
+        // Метод сам решит, нужно ли создавать новый источник или продолжать существующий
+        await audioPlayerService.playRadio();
       }
-      // Явная синхронизация после действия
-      _onAudioServiceUpdate();
+      
+      // Всегда обновляем состояние после действия
+      updatePlaybackState(true);
+      
     } catch (e) {
       debugPrint('Error in background play: $e');
     } finally {
@@ -393,40 +373,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
     try {
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.pause();
-        
-        // Сразу обновляем состояние
-        final player = audioPlayerService.getPlayer();
-        if (player != null) {
-          updatePlaybackState(false);
-        }
       } else {
-        // РАДИО: Уточненная логика с учетом всех состояний
-        debugPrint('Radio pause - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
-                  'isRadioPaused: ${audioPlayerService.isRadioPaused}, '
-                  'isRadioStopped: ${audioPlayerService.isRadioStopped}');
-        
-        if (audioPlayerService.isRadioPlaying) {
-          // Радио играет - ставим на паузу
-          await audioPlayerService.pauseRadio();
-          updatePlaybackState(false); // Явно обновляем состояние
-        } else if (audioPlayerService.isRadioPaused) {
-          // Радио уже на паузе - ставим в состояние "остановлено"
-          debugPrint('Radio is paused, stopping completely');
-          await audioPlayerService.stopRadio();
-          updatePlaybackState(false); // Обновляем состояние
-        } else if (audioPlayerService.isRadioStopped) {
-          // Радио уже остановлено - ничего не делаем
-          debugPrint('Radio is already stopped, ignoring pause command');
-          updatePlaybackState(false); // Все равно обновляем состояние
-        } else {
-          // Радио в неопределенном состоянии - останавливаем
-          debugPrint('Radio in unknown state, stopping');
-          await audioPlayerService.stopRadio();
-          updatePlaybackState(false);
-        }
+        // РАДИО: Упрощенная логика - всегда вызываем pauseRadio
+        // Если радио уже на паузе, pauseRadio сам разберется
+        await audioPlayerService.pauseRadio();
       }
-      // Явная синхронизация после действия
-      _onAudioServiceUpdate();
+      
+      // ВАЖНО: всегда обновляем состояние независимо от текущего состояния
+      updatePlaybackState(false);
+      
     } catch (e) {
       debugPrint('Error in background pause: $e');
     } finally {

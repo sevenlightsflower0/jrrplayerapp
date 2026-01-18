@@ -880,24 +880,26 @@ Future<void> pauseRadio() async {
   try {
     final player = getPlayer();
     debugPrint('pauseRadio called, player state: ${player?.playing}');
-
-    if (player != null && player.playing) {
-      // ПРОСТО ставим на паузу, НЕ останавливаем и НЕ сбрасываем источник
-      await player.pause();
-
-      // Обновляем состояние в background audio
-      _updateBackgroundAudioPlaybackState(false);
-
-      // Останавливаем таймер метаданных для Web
-      if (kIsWeb) {
-        _stopWebMetadataPolling();
+    
+    if (player != null) {
+      if (player.playing) {
+        // Если радио играет - ставим на паузу
+        await player.pause();
+        debugPrint('Radio paused');
+      } else if (player.processingState != ProcessingState.idle) {
+        // Если радио уже на паузе, но источник активен - останавливаем полностью
+        await stopRadio();
+        debugPrint('Radio stopped completely from pause state');
+      } else {
+        // Радио уже остановлено
+        debugPrint('Radio already stopped or idle');
       }
-
-      debugPrint('Radio paused (source preserved)');
     } else {
-      debugPrint('Radio not playing or player null in pauseRadio');
+      debugPrint('Player is null in pauseRadio');
     }
 
+    // Всегда обновляем состояние
+    _updateBackgroundAudioPlaybackState(false);
     _notifyListeners();
   } catch (e) {
     debugPrint('Error pausing radio: $e');
