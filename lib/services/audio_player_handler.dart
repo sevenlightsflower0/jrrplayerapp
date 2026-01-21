@@ -353,26 +353,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
           updatePlaybackState(true);
         }
       } else {
-        // РАДИО: Уточненная логика
-        debugPrint('Radio play - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
-                  'isRadioPaused: ${audioPlayerService.isRadioPaused}, '
-                  'isRadioStopped: ${audioPlayerService.isRadioStopped}');
-        
-        if (audioPlayerService.isRadioPlaying) {
-          // Радио уже играет, ничего не делаем
-          debugPrint('Radio is already playing, ignoring play command');
-          updatePlaybackState(true); // Все равно обновляем состояние
-        } else if (audioPlayerService.isRadioPaused) {
-          // Радио на паузе - возобновляем (НЕ создаем новый источник)
-          await audioPlayerService.resumeRadio();
-          updatePlaybackState(true);
-        } else if (audioPlayerService.isRadioStopped) {
-          // Радио остановлено - запускаем заново
+        // РАДИО: ПРОСТАЯ ЛОГИКА - если не играет, то запускаем
+        if (!audioPlayerService.isPlaying) {
           await audioPlayerService.playRadio();
           updatePlaybackState(true);
         } else {
-          // Радио в неопределенном состоянии - запускаем
-          await audioPlayerService.playRadio();
+          // Уже играет, ничего не делаем
+          debugPrint('Radio is already playing, ignoring play command');
           updatePlaybackState(true);
         }
       }
@@ -392,41 +379,19 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
+      // ПРОСТАЯ ЛОГИКА: вызываем тот же метод, что и основной UI
       if (audioPlayerService.isPodcastMode) {
+        // Для подкаста: просто pause через сервис
         await audioPlayerService.pause();
-        
-        // Сразу обновляем состояние
-        updatePlaybackState(false); // ЯВНО устанавливаем false
-        
       } else {
-        // РАДИО: Уточненная логика с учетом всех состояний
-        debugPrint('Radio pause - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
-                  'isRadioPaused: ${audioPlayerService.isRadioPaused}, '
-                  'isRadioStopped: ${audioPlayerService.isRadioStopped}');
-        
-        if (audioPlayerService.isRadioPlaying) {
-          // Радио играет - ставим на паузу
-          await audioPlayerService.pauseRadio();
-          updatePlaybackState(false); // ЯВНО обновляем состояние
-        } else if (audioPlayerService.isRadioPaused) {
-          // Радио уже на паузе - ставим в состояние "остановлено"
-          debugPrint('Radio is paused, stopping completely');
-          await audioPlayerService.stopRadio();
-          updatePlaybackState(false); // ЯВНО обновляем состояние
-        } else if (audioPlayerService.isRadioStopped) {
-          // Радио уже остановлено - ничего не делаем
-          debugPrint('Radio is already stopped, ignoring pause command');
-          updatePlaybackState(false); // Все равно обновляем состояние
-        } else {
-          // Радио в неопределенном состоянии - останавливаем
-          debugPrint('Radio in unknown state, stopping');
-          await audioPlayerService.stopRadio();
-          updatePlaybackState(false);
-        }
+        // Для радио: вызываем pauseRadio() ВСЕГДА, как делает основной UI
+        // Не нужно проверять сложные условия - просто ставим на паузу
+        debugPrint('Radio pause - calling pauseRadio() directly');
+        await audioPlayerService.pauseRadio();
       }
       
-      // FIXED: Removed the problematic WidgetsBinding call since the method doesn't exist
-      // We're already updating the state through updatePlaybackState(false)
+      // Немедленно обновляем состояние после паузы
+      updatePlaybackState(false);
       
     } catch (e) {
       debugPrint('Error in background pause: $e');

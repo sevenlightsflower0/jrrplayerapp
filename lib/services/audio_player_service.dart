@@ -906,33 +906,17 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('pauseRadio called, player state: ${player?.playing}');
 
       if (player != null && player.playing) {
-        // ПРОСТО ставим на паузу, НЕ останавливаем и НЕ сбрасываем источник
         await player.pause();
-
-        // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Принудительно обновляем ВСЕ состояния
-        _playbackStateController.add(false);
-        _updateBackgroundAudioPlaybackState(false);
-        _forceNotifyPlaybackState(false); // Используем новый метод
-
-        // Останавливаем таймер метаданных для Web
-        if (kIsWeb) {
-          _stopWebMetadataPolling();
-        }
-
-        debugPrint('Radio paused (source preserved)');
+        
+        // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Останавливаем радио полностью при паузе
+        // Это синхронизирует поведение с основным UI
+        await stopRadio(); // ДОБАВЬТЕ ЭТУ СТРОКУ
+        
+        debugPrint('Radio paused and stopped completely');
       } else {
         debugPrint('Radio not playing or player null in pauseRadio');
-        // Даже если плеер не играет, все равно обновляем состояние
         _forceNotifyPlaybackState(false);
       }
-
-      // Дополнительное уведомление через Future для гарантии
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (!_isDisposed) {
-          _playbackStateController.add(false);
-          notifyListeners();
-        }
-      });
 
     } catch (e) {
       debugPrint('Error pausing radio: $e');
@@ -1144,7 +1128,6 @@ class AudioPlayerService with ChangeNotifier {
   }
 
 
-
   Future<void> pause() async {
     try {
       final player = getPlayer();
@@ -1152,6 +1135,11 @@ class AudioPlayerService with ChangeNotifier {
 
       if (player != null && player.playing) {
         await player.pause();
+        
+        // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Если это радио, останавливаем полностью
+        if (!_isPodcastMode) {
+          await stopRadio(); // ДОБАВЬТЕ ЭТУ СТРОКУ
+        }
 
         // Немедленно уведомляем AudioHandler
         _updateBackgroundAudioPlaybackState(false);
@@ -1163,13 +1151,12 @@ class AudioPlayerService with ChangeNotifier {
           await _saveCurrentPosition();
           debugPrint('Podcast paused and position saved');
         } else {
-          debugPrint('Radio paused');
+          debugPrint('Radio paused and stopped completely');
         }
 
         _notifyListeners();
       } else {
         debugPrint('Pause ignored: player not playing or null');
-        // Даже если плеер не играет, все равно уведомляем AudioHandler
         _updateBackgroundAudioPlaybackState(false);
       }
     } catch (e) {
