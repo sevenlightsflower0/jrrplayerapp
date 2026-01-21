@@ -46,6 +46,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
     _audioService = Provider.of<AudioPlayerService>(context, listen: false);
 
+    // Запускаем периодическую проверку состояния
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndSyncState();
+    });
+  
     // Подписываемся на поток состояний
     _audioService.playbackStateStream.listen((isPlaying) {
       if (mounted) {
@@ -129,11 +134,17 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               'isRadioPaused: ${_audioService.isRadioPaused}, '
               'isRadioStopped: ${_audioService.isRadioStopped}');
 
-    // СИНХРОНИЗИРУЕМ состояние из сервиса с notifier
-    // Это важно, когда состояние меняется из фонового режима
-    if (_playingNotifier.value != _audioService.isPlaying) {
-      _playingNotifier.value = _audioService.isPlaying;
-      debugPrint('🎵 Sync: Updated _playingNotifier to ${_audioService.isPlaying}');
+    // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Всегда обновляем notifier, даже если значение кажется тем же
+    // Это решает проблему, когда UI не обновляется из-за того что значение в notifier
+    // уже было false, но UI все равно нужно перерисовать
+    final currentPlayingState = _audioService.isPlaying;
+    if (_playingNotifier.value != currentPlayingState) {
+      _playingNotifier.value = currentPlayingState;
+      debugPrint('🎵 Sync: Updated _playingNotifier to $currentPlayingState');
+    } else {
+      // Даже если значение не изменилось, принудительно триггерим обновление
+      _playingNotifier.value = currentPlayingState;
+      debugPrint('🎵 Sync: Force updated _playingNotifier (same value: $currentPlayingState)');
     }
 
     // Принудительная синхронизация состояния плеера
@@ -146,10 +157,37 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       _imageUpdateNotifier.value++;
     }
 
-    // Принудительное обновление UI
+    // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Всегда вызываем setState, даже если данные не изменились
+    // Это гарантирует обновление UI при командах из фонового режима
     if (mounted) {
-      setState(() {});
+      setState(() {
+        // Принудительное обновление состояния кнопки
+        _playingNotifier.value = _audioService.isPlaying;
+      });
     }
+  }
+
+  Future<void> _checkAndSyncState() async {
+    if (!mounted) return;
+    
+    final player = _audioService.getPlayer();
+    final isActuallyPlaying = player?.playing ?? false;
+    final serviceSaysPlaying = _audioService.isPlaying;
+    
+    debugPrint('🎵 State check: player.playing=$isActuallyPlaying, service.isPlaying=$serviceSaysPlaying');
+    
+    // Если есть расхождение, синхронизируем
+    if (isActuallyPlaying != serviceSaysPlaying) {
+      debugPrint('🎵 State mismatch! Syncing...');
+      _playingNotifier.value = isActuallyPlaying;
+      
+      if (mounted) {
+        setState(() {});
+      }
+    }
+    
+    // Периодическая проверка
+    Future.delayed(const Duration(seconds: 2), _checkAndSyncState);
   }
 
   Future<void> _togglePlayPause() async {

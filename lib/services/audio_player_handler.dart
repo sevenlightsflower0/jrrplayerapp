@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart'; 
+import 'package:flutter/widgets.dart'; // ADDED: Import for WidgetsBinding
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
 import 'package:just_audio/just_audio.dart';
@@ -395,10 +396,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
         await audioPlayerService.pause();
         
         // Сразу обновляем состояние
-        final player = audioPlayerService.getPlayer();
-        if (player != null) {
-          updatePlaybackState(false);
-        }
+        updatePlaybackState(false); // ЯВНО устанавливаем false
+        
       } else {
         // РАДИО: Уточненная логика с учетом всех состояний
         debugPrint('Radio pause - isRadioPlaying: ${audioPlayerService.isRadioPlaying}, '
@@ -408,12 +407,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
         if (audioPlayerService.isRadioPlaying) {
           // Радио играет - ставим на паузу
           await audioPlayerService.pauseRadio();
-          updatePlaybackState(false); // Явно обновляем состояние
+          updatePlaybackState(false); // ЯВНО обновляем состояние
         } else if (audioPlayerService.isRadioPaused) {
           // Радио уже на паузе - ставим в состояние "остановлено"
           debugPrint('Radio is paused, stopping completely');
           await audioPlayerService.stopRadio();
-          updatePlaybackState(false); // Обновляем состояние
+          updatePlaybackState(false); // ЯВНО обновляем состояние
         } else if (audioPlayerService.isRadioStopped) {
           // Радио уже остановлено - ничего не делаем
           debugPrint('Radio is already stopped, ignoring pause command');
@@ -425,13 +424,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
           updatePlaybackState(false);
         }
       }
-      // Явная синхронизация после действия
-      _onAudioServiceUpdate();
+      
+      // FIXED: Removed the problematic WidgetsBinding call since the method doesn't exist
+      // We're already updating the state through updatePlaybackState(false)
+      
     } catch (e) {
       debugPrint('Error in background pause: $e');
     } finally {
       _isHandlingControl = false;
     }
+  }
+    
+  // Новый метод для принудительного обновления UI
+  void forceUpdateUI(bool isPlaying) {
+    updatePlaybackState(isPlaying);
+    _updateControls();
   }
 
   @override

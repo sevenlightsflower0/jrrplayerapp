@@ -879,6 +879,27 @@ class AudioPlayerService with ChangeNotifier {
     debugPrint('=== playRadio() END ===');
   }
 
+  void _forceNotifyPlaybackState(bool isPlaying) {
+    if (_isDisposed) return;
+    
+    // Уведомляем через контроллер состояния воспроизведения
+    if (!_playbackStateController.isClosed) {
+      try {
+        _playbackStateController.add(isPlaying);
+      } catch (e) {
+        debugPrint('Error in _playbackStateController.add: $e');
+      }
+    }
+    
+    // Уведомляем слушателей ChangeNotifier
+    notifyListeners();
+    
+    // Обновляем background audio состояние
+    _updateBackgroundAudioPlaybackState(isPlaying);
+    
+    debugPrint('Force notified playback state: $isPlaying');
+  }
+
   Future<void> pauseRadio() async {
     try {
       final player = getPlayer();
@@ -888,11 +909,10 @@ class AudioPlayerService with ChangeNotifier {
         // ПРОСТО ставим на паузу, НЕ останавливаем и НЕ сбрасываем источник
         await player.pause();
 
-        // Обновляем состояние в background audio
+        // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Принудительно обновляем ВСЕ состояния
+        _playbackStateController.add(false);
         _updateBackgroundAudioPlaybackState(false);
-
-        // Уведомляем о состоянии воспроизведения
-        _playbackStateController.add(false); // ДОБАВЬТЕ ЭТУ СТРОКУ
+        _forceNotifyPlaybackState(false); // Используем новый метод
 
         // Останавливаем таймер метаданных для Web
         if (kIsWeb) {
@@ -902,12 +922,21 @@ class AudioPlayerService with ChangeNotifier {
         debugPrint('Radio paused (source preserved)');
       } else {
         debugPrint('Radio not playing or player null in pauseRadio');
+        // Даже если плеер не играет, все равно обновляем состояние
+        _forceNotifyPlaybackState(false);
       }
 
-      _notifyListeners();
+      // Дополнительное уведомление через Future для гарантии
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (!_isDisposed) {
+          _playbackStateController.add(false);
+          notifyListeners();
+        }
+      });
+
     } catch (e) {
       debugPrint('Error pausing radio: $e');
-      _notifyListeners();
+      _forceNotifyPlaybackState(false);
     }
   }
 
