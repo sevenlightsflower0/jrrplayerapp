@@ -344,11 +344,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      final player = audioPlayerService.getPlayer();
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем инициализацию сервиса
+      if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
+        debugPrint('Background audio: service not initialized, initializing...');
+        await audioPlayerService.initialize();
+        await Future.delayed(const Duration(milliseconds: 500)); // Даем время на инициализацию
+      }
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
         // Подкаст: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
-        // В основном UI для подкаста используется player.play()
+        final player = audioPlayerService.getPlayer();
         if (player != null) {
           if (!player.playing) {
             await player.play();
@@ -356,22 +361,31 @@ class AudioPlayerHandler extends BaseAudioHandler {
           } else {
             debugPrint('Podcast already playing, ignoring play command');
           }
+        } else {
+          debugPrint('No player available for podcast');
         }
       } else {
-        // РАДИО: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
-        // В основном UI для радио используется playRadio() всегда
-        debugPrint('Radio play - calling playRadio() directly from background');
+        // РАДИО: вызываем playRadio() напрямую
+        debugPrint('Background: Starting radio...');
         await audioPlayerService.playRadio();
       }
       
-      // Немедленно обновляем состояние после воспроизведения
-      updatePlaybackState(true);
+      // Обновляем состояние после небольшой задержки для синхронизации
+      await Future.delayed(const Duration(milliseconds: 300), () {
+        updatePlaybackState(true);
+        _onAudioServiceUpdate();
+      });
       
-      // Дополнительная синхронизация
-      _onAudioServiceUpdate();
-      
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Error in background play: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      // Пытаемся восстановить состояние
+      try {
+        if (!audioPlayerService.isPodcastMode) {
+          updatePlaybackState(false);
+        }
+      } catch (_) {}
     } finally {
       _isHandlingControl = false;
     }
