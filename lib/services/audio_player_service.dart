@@ -773,13 +773,35 @@ class AudioPlayerService with ChangeNotifier {
         await initialize();
       }
 
-      // Если радио уже играет, ничего не делаем
+      // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Если радио уже играет, ничего не делаем
       if (isRadioPlaying) {
         debugPrint('Radio is already playing, ignoring playRadio command');
         return;
       }
 
-      // Сбросим флаг остановки радио
+      // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Если радио на паузе, возобновляем
+      if (isRadioPaused) {
+        debugPrint('Radio is paused, resuming...');
+        final player = getPlayer();
+        if (player != null && !player.playing) {
+          await player.play();
+          // Обновляем состояние
+          _updateBackgroundAudioPlaybackState(true);
+          _playbackStateController.add(true);
+          _notifyListeners();
+          
+          // Запускаем таймер метаданных для Web
+          if (kIsWeb) {
+            _startWebMetadataPolling();
+          }
+          
+          debugPrint('Radio resumed from pause');
+          return;
+        }
+      }
+
+      // Если мы дошли сюда, значит радио остановлено или не инициализировано
+      // Сбрасываем флаг остановки радио
       _isRadioStopped = false;
 
       // Останавливаем таймер метаданных для Web
@@ -820,52 +842,39 @@ class AudioPlayerService with ChangeNotifier {
       updateMetadata(initialMetadata);
       debugPrint('Metadata updated');
 
-      try {
-        debugPrint('Checking current player state...');
-        final player = getPlayer();
+      final player = getPlayer();
+      
+      // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Всегда создаем новый источник для радио
+      // Это гарантирует одинаковое поведение с основным UI
+      debugPrint('Creating new audio source for radio...');
+      
+      // Создаем аудио-источник
+      final audioSource = AudioSource.uri(
+        Uri.parse(AppStrings.livestreamUrl),
+        tag: mediaItem,
+      );
 
-        // Если плеер в состоянии idle или у него нет источника
-        if (player == null || player.processingState == ProcessingState.idle) {
-          debugPrint('Player is idle, creating new audio source...');
+      debugPrint('Setting audio source...');
+      await player?.setAudioSource(audioSource);
 
-          // Создаем аудио-источник
-          final audioSource = AudioSource.uri(
-            Uri.parse(AppStrings.livestreamUrl),
-            tag: mediaItem,
-          );
+      debugPrint('Starting playback...');
+      await player?.play();
 
-          debugPrint('Setting audio source...');
-          await player?.setAudioSource(audioSource);
+      debugPrint('Playback started successfully');
 
-          debugPrint('Starting playback...');
-          await player?.play();
-        } else {
-          // У плеера уже есть источник, просто продолжаем воспроизведение
-          debugPrint('Player has existing source, resuming playback...');
-          await player.play();
-        }
-
-        debugPrint('Playback started successfully');
-
-        // Запускаем таймер метаданных для Web
-        if (kIsWeb) {
-          _startWebMetadataPolling();
-        }
-
-        // Немедленно обновляем background audio состояние
-        _updateBackgroundAudioPlaybackState(true);
-
-        // После успешного запуска уведомляем о состоянии
-        _playbackStateController.add(true);
-
-        debugPrint('Radio playback successful');
-        _notifyListeners();
-
-      } catch (e, stackTrace) {
-        debugPrint('Error in playRadio: $e');
-        debugPrint('Stack trace: $stackTrace');
-        rethrow;
+      // Запускаем таймер метаданных для Web
+      if (kIsWeb) {
+        _startWebMetadataPolling();
       }
+
+      // Немедленно обновляем background audio состояние
+      _updateBackgroundAudioPlaybackState(true);
+
+      // После успешного запуска уведомляем о состоянии
+      _playbackStateController.add(true);
+
+      debugPrint('Radio playback successful');
+      _notifyListeners();
 
     } catch (e, stackTrace) {
       debugPrint('=== ERROR in playRadio() ===');

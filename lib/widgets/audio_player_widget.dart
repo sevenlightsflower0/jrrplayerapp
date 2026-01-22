@@ -208,6 +208,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
             await player.play();
           }
         } else {
+          // ДЛЯ РАДИО: используем playRadio() всегда (как в фоновом режиме)
           await _audioService.playRadio();
         }
       }
@@ -221,8 +222,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
-      
-      // Используем глобальный ключ Scaffold для показа SnackBar
       _showErrorSnackBar('Error: $e');
     }
   }

@@ -347,24 +347,29 @@ class AudioPlayerHandler extends BaseAudioHandler {
       final player = audioPlayerService.getPlayer();
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        // Подкаст: просто возобновляем
-        if (player != null && !player.playing) {
-          await player.play();
-          updatePlaybackState(true);
+        // Подкаст: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
+        // В основном UI для подкаста используется player.play()
+        if (player != null) {
+          if (!player.playing) {
+            await player.play();
+            debugPrint('Podcast resumed from background');
+          } else {
+            debugPrint('Podcast already playing, ignoring play command');
+          }
         }
       } else {
-        // РАДИО: ПРОСТАЯ ЛОГИКА - если не играет, то запускаем
-        if (!audioPlayerService.isPlaying) {
-          await audioPlayerService.playRadio();
-          updatePlaybackState(true);
-        } else {
-          // Уже играет, ничего не делаем
-          debugPrint('Radio is already playing, ignoring play command');
-          updatePlaybackState(true);
-        }
+        // РАДИО: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
+        // В основном UI для радио используется playRadio() всегда
+        debugPrint('Radio play - calling playRadio() directly from background');
+        await audioPlayerService.playRadio();
       }
-      // Явная синхронизация после действия
+      
+      // Немедленно обновляем состояние после воспроизведения
+      updatePlaybackState(true);
+      
+      // Дополнительная синхронизация
       _onAudioServiceUpdate();
+      
     } catch (e) {
       debugPrint('Error in background play: $e');
     } finally {
