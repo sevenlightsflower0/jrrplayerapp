@@ -344,16 +344,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // ОБЯЗАТЕЛЬНО инициализируем сервис перед любой операцией
-      await audioPlayerService.initialize();
-      
-      // Даем время на полную инициализацию
-      await Future.delayed(const Duration(milliseconds: 100));
-      
-      final player = audioPlayerService.getPlayer();
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем инициализацию сервиса
+      if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
+        debugPrint('Background audio: service not initialized, initializing...');
+        await audioPlayerService.initialize();
+        await Future.delayed(const Duration(milliseconds: 500)); // Даем время на инициализацию
+      }
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
         // Подкаст: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
+        final player = audioPlayerService.getPlayer();
         if (player != null) {
           if (!player.playing) {
             await player.play();
@@ -362,19 +362,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
             debugPrint('Podcast already playing, ignoring play command');
           }
         } else {
-          debugPrint('ERROR: No player available for podcast!');
-          // Пересоздаем плеер
-          await audioPlayerService.initialize();
-          await audioPlayerService.getPlayer()?.play();
+          debugPrint('No player available for podcast');
         }
       } else {
-        // РАДИО: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
-        debugPrint('Radio play from background - calling playRadio()');
-        
-        // Сбрасываем флаг остановки радио
-        audioPlayerService.setRadioStopped(false);
-        
-        // Всегда вызываем playRadio, он сам разберется с состоянием
+        // РАДИО: вызываем playRadio() напрямую
+        debugPrint('Background: Starting radio...');
         await audioPlayerService.playRadio();
       }
       
@@ -390,8 +382,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       // Пытаемся восстановить состояние
       try {
-        updatePlaybackState(false);
-        _onAudioServiceUpdate();
+        if (!audioPlayerService.isPodcastMode) {
+          updatePlaybackState(false);
+        }
       } catch (_) {}
     } finally {
       _isHandlingControl = false;
@@ -403,15 +396,20 @@ class AudioPlayerHandler extends BaseAudioHandler {
     if (_isHandlingControl) return;
     _isHandlingControl = true;
     
-    debugPrint('Background audio: pause called');
+    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // ОБЯЗАТЕЛЬНО инициализируем сервис
-      await audioPlayerService.initialize();
+      // ПРОСТАЯ ЛОГИКА: вызываем тот же метод, что и основной UI
+      if (audioPlayerService.isPodcastMode) {
+        // Для подкаста: просто pause через сервис
+        await audioPlayerService.pause();
+      } else {
+        // Для радио: вызываем pauseRadio() ВСЕГДА, как делает основной UI
+        // Не нужно проверять сложные условия - просто ставим на паузу
+        debugPrint('Radio pause - calling pauseRadio() directly');
+        await audioPlayerService.pauseRadio();
+      }
       
-      // Простая логика: для всего вызываем pause()
-      await audioPlayerService.pause();
-      
-      // Обновляем состояние
+      // Немедленно обновляем состояние после паузы
       updatePlaybackState(false);
       
     } catch (e) {

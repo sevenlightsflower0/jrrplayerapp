@@ -192,34 +192,32 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Future<void> _togglePlayPause() async {
     debugPrint('🎵 Toggle play/pause called');
-
+    
     try {
       final isCurrentlyPlaying = _audioService.isPlaying;
-
+      
       if (isCurrentlyPlaying) {
-        debugPrint('🎵 Switching to PAUSE');
-        await _audioService.pause();
+        // ✅ Пауза: одинаково для всех режимов
+        debugPrint('🎵 Switching to PAUSE (same as background)');
+        await _audioService.pause(); // Вызывает stopRadio() для радио
       } else {
-        debugPrint('🎵 Switching to PLAY');
-
+        debugPrint('🎵 Switching to PLAY (same as background)');
+        
         if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
+          // Подкаст: play() напрямую на плеере
           final player = _audioService.getPlayer();
           if (player != null) {
             await player.play();
           }
         } else {
-          // ДЛЯ РАДИО: используем playRadio() всегда (как в фоновом режиме)
+          // Радио: playRadio() (как в фоновом режиме)
           await _audioService.playRadio();
         }
       }
-
-      // Сразу обновляем UI состояние
-      if (mounted) {
-        setState(() {
-          _playingNotifier.value = !isCurrentlyPlaying;
-        });
-      }
-
+      
+      // Сразу обновляем UI
+      _syncPlayerState();
+      
     } catch (e) {
       debugPrint('🎵 Error in toggle play/pause: $e');
       _showErrorSnackBar('Error: $e');
