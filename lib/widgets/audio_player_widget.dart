@@ -191,39 +191,35 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Future<void> _togglePlayPause() async {
-    debugPrint('🎵 Toggle play/pause called');
-    
-    try {
-      final isCurrentlyPlaying = _audioService.isPlaying;
+      debugPrint('🎵 Toggle play/pause called');
       
-      if (isCurrentlyPlaying) {
-        // ✅ Пауза: одинаково для всех режимов
-        debugPrint('🎵 Switching to PAUSE (same as background)');
-        await _audioService.pause(); // Вызывает stopRadio() для радио
-      } else {
-        debugPrint('🎵 Switching to PLAY (same as background)');
-        
-        if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
-          // Подкаст: play() напрямую на плеере
-          final player = _audioService.getPlayer();
-          if (player != null) {
-            await player.play();
+      try {
+          final isCurrentlyPlaying = _audioService.isPlaying;
+          
+          if (isCurrentlyPlaying) {
+              // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
+              debugPrint('🎵 Switching to PAUSE');
+              await _audioService.pause(); // Этот метод должен одинаково работать для всех режимов
+          } else {
+              debugPrint('🎵 Switching to PLAY');
+              
+              if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
+                  // Подкаст: воспроизведение через сервис
+                  await _audioService.playPodcast(_audioService.currentEpisode!);
+              } else {
+                  // Радио: запуск через сервис
+                  await _audioService.playRadio();
+              }
           }
-        } else {
-          // Радио: playRadio() (как в фоновом режиме)
-          await _audioService.playRadio();
-        }
+          
+          // Немедленная синхронизация
+          _syncPlayerState();
+          
+      } catch (e) {
+          debugPrint('🎵 Error in toggle play/pause: $e');
+          _showErrorSnackBar('Error: $e');
       }
-      
-      // Сразу обновляем UI
-      _syncPlayerState();
-      
-    } catch (e) {
-      debugPrint('🎵 Error in toggle play/pause: $e');
-      _showErrorSnackBar('Error: $e');
-    }
   }
-
   // Метод для безопасного показа SnackBar
   void _showErrorSnackBar(String message) {
     // Используем WidgetsBinding для безопасного доступа к контексту

@@ -721,12 +721,17 @@ class AudioPlayerService with ChangeNotifier {
     return _player?.playing == true;
   }
 
-  bool get isRadioPlaying {
-    return !_isPodcastMode && !_isRadioStopped && (_player?.playing == true);
+  bool get isRadioPaused {
+      return !_isPodcastMode && 
+            !_isRadioStopped && 
+            (_player?.playing == false) &&
+            (_player?.processingState != ProcessingState.idle);
   }
 
-  bool get isRadioPaused {
-    return !_isPodcastMode && !_isRadioStopped && (_player?.playing == false);
+  bool get isRadioPlaying {
+      return !_isPodcastMode && 
+            !_isRadioStopped && 
+            (_player?.playing == true);
   }
 
   bool get isRadioStopped {
@@ -795,7 +800,13 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('  processingState: ${player.processingState}');
       
       // Если радио было остановлено полностью (не пауза), запускаем заново
-      if (_isRadioStopped || player.processingState == ProcessingState.idle) {
+      
+      if (isRadioPaused) {
+        // Радио на паузе - просто возобновляем
+        debugPrint('Radio was paused - resuming');
+        await player.play();
+        _isRadioStopped = false;
+      } else if (_isRadioStopped || player.processingState == ProcessingState.idle) {
         debugPrint('Radio was stopped or idle - starting fresh');
         
         // Сбрасываем флаг остановки
@@ -1150,39 +1161,39 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-
   Future<void> pause() async {
-    try {
-      final player = getPlayer();
-      debugPrint('General pause called, isPodcastMode: $_isPodcastMode, playing: ${player?.playing}');
-      
-      if (player != null && player.playing) {
-        await player.pause();
-        
-        if (!_isPodcastMode) {
-          // Для радио: только пауза, НЕ полная остановка
-          debugPrint('Radio paused (not stopped)');
-        } else {
-          // Для подкаста: сохраняем позицию
-          await _saveCurrentPosition();
-          debugPrint('Podcast paused and position saved');
-        }
-        
-        // Немедленно уведомляем AudioHandler
-        _updateBackgroundAudioPlaybackState(false);
-        
-        // Уведомляем все слушатели о изменении состояния
-        _playbackStateController.add(false);
-        
-        _notifyListeners();
-      } else {
-        debugPrint('Pause ignored: player not playing or null');
-        _updateBackgroundAudioPlaybackState(false);
+      try {
+          final player = getPlayer();
+          debugPrint('General pause called, isPodcastMode: $_isPodcastMode, playing: ${player?.playing}');
+          
+          if (player != null && player.playing) {
+              await player.pause();
+              
+              if (!_isPodcastMode) {
+                  // Для радио: устанавливаем флаг паузы, НО не полную остановку
+                  _isRadioStopped = false; // Сбрасываем флаг полной остановки
+                  debugPrint('Radio paused (isRadioStopped set to false)');
+              } else {
+                  // Для подкаста: сохраняем позицию
+                  await _saveCurrentPosition();
+                  debugPrint('Podcast paused and position saved');
+              }
+              
+              // Немедленно уведомляем AudioHandler
+              _updateBackgroundAudioPlaybackState(false);
+              
+              // Уведомляем все слушатели
+              _playbackStateController.add(false);
+              
+              _notifyListeners();
+          } else {
+              debugPrint('Pause ignored: player not playing or null');
+              _updateBackgroundAudioPlaybackState(false);
+          }
+      } catch (e) {
+          debugPrint('Error in pause: $e');
+          _notifyListeners();
       }
-    } catch (e) {
-      debugPrint('Error in pause: $e');
-      _notifyListeners();
-    }
   }
   
   Future<void> resumeRadioFromPause() async {

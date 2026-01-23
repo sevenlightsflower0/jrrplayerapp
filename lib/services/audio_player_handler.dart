@@ -393,30 +393,22 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   @override
   Future<void> pause() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-    try {
-      // ПРОСТАЯ ЛОГИКА: вызываем тот же метод, что и основной UI
-      if (audioPlayerService.isPodcastMode) {
-        // Для подкаста: просто pause через сервис
-        await audioPlayerService.pause();
-      } else {
-        // Для радио: вызываем pauseRadio() ВСЕГДА, как делает основной UI
-        // Не нужно проверять сложные условия - просто ставим на паузу
-        debugPrint('Radio pause - calling pauseRadio() directly');
-        await audioPlayerService.pauseRadio();
+      if (_isHandlingControl) return;
+      _isHandlingControl = true;
+      
+      debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+      try {
+          // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
+          await audioPlayerService.pause();
+          
+          // Немедленно обновляем состояние
+          updatePlaybackState(false);
+          
+      } catch (e) {
+          debugPrint('Error in background pause: $e');
+      } finally {
+          _isHandlingControl = false;
       }
-      
-      // Немедленно обновляем состояние после паузы
-      updatePlaybackState(false);
-      
-    } catch (e) {
-      debugPrint('Error in background pause: $e');
-    } finally {
-      _isHandlingControl = false;
-    }
   }
     
   // Новый метод для принудительного обновления UI
