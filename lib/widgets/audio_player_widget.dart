@@ -191,35 +191,42 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   Future<void> _togglePlayPause() async {
-      debugPrint('🎵 Toggle play/pause called');
+    debugPrint('🎵 Toggle play/pause called');
+    
+    try {
+      final isCurrentlyPlaying = _audioService.isPlaying;
       
-      try {
-          final isCurrentlyPlaying = _audioService.isPlaying;
-          
-          if (isCurrentlyPlaying) {
-              // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
-              debugPrint('🎵 Switching to PAUSE');
-              await _audioService.pause(); // Этот метод должен одинаково работать для всех режимов
+      if (isCurrentlyPlaying) {
+        // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
+        debugPrint('🎵 Switching to PAUSE');
+        await _audioService.pause(); // Этот метод должен одинаково работать для всех режимов
+      } else {
+        debugPrint('🎵 Switching to PLAY');
+        
+        if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
+          // Подкаст: воспроизведение через сервис
+          await _audioService.playPodcast(_audioService.currentEpisode!);
+        } else {
+          // Радио: проверяем, не на паузе ли оно
+          if (_audioService.isRadioPaused) {
+            debugPrint('🎵 Radio is paused - resuming');
+            await _audioService.resumeRadioFromPause();
           } else {
-              debugPrint('🎵 Switching to PLAY');
-              
-              if (_audioService.isPodcastMode && _audioService.currentEpisode != null) {
-                  // Подкаст: воспроизведение через сервис
-                  await _audioService.playPodcast(_audioService.currentEpisode!);
-              } else {
-                  // Радио: запуск через сервис
-                  await _audioService.playRadio();
-              }
+            debugPrint('🎵 Radio is stopped - starting fresh');
+            await _audioService.playRadio();
           }
-          
-          // Немедленная синхронизация
-          _syncPlayerState();
-          
-      } catch (e) {
-          debugPrint('🎵 Error in toggle play/pause: $e');
-          _showErrorSnackBar('Error: $e');
+        }
       }
+      
+      // Немедленная синхронизация
+      _syncPlayerState();
+      
+    } catch (e) {
+      debugPrint('🎵 Error in toggle play/pause: $e');
+      _showErrorSnackBar('Error: $e');
+    }
   }
+
   // Метод для безопасного показа SnackBar
   void _showErrorSnackBar(String message) {
     // Используем WidgetsBinding для безопасного доступа к контексту
@@ -251,18 +258,18 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       debugPrint('🎵   isRadioPlaying: ${_audioService.isRadioPlaying}');
       debugPrint('🎵   isRadioPaused: ${_audioService.isRadioPaused}');
       debugPrint('🎵   isRadioStopped: ${_audioService.isRadioStopped}');
-      debugPrint('🎵   Position: $position');
-      debugPrint('🎵   Duration: $duration');
-
+      
+      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем все возможные состояния радио
+      bool actualPlayingState = isPlaying;
+      
+      if (!_audioService.isPodcastMode) {
+        // Для радио используем логику из сервиса
+        actualPlayingState = _audioService.isRadioPlaying;
+      }
+      
       // ВАЖНО: обновляем notifier даже если значение не изменилось
       // чтобы гарантировать обновление UI
-      _playingNotifier.value = isPlaying;
-      
-      // Двойная проверка: если радио остановлено, гарантируем false
-      if (_audioService.isRadioStopped && isPlaying) {
-        debugPrint('🎵 WARNING: Radio is stopped but player shows playing! Forcing false.');
-        _playingNotifier.value = false;
-      }
+      _playingNotifier.value = actualPlayingState;
       
       if (_positionNotifier.value != position) {
         _positionNotifier.value = position;
@@ -276,18 +283,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       final newMetadata = _audioService.currentMetadata;
       if (_metadataNotifier.value != newMetadata) {
         _metadataNotifier.value = newMetadata;
-      }
-
-      // Обновляем громкость
-      final currentVolume = player.volume;
-      if ((_volumeNotifier.value - currentVolume).abs() > 0.01) {
-        _volumeNotifier.value = currentVolume;
-      }
-    } else {
-      debugPrint('🎵 Player is null in _syncPlayerState');
-      // Если плеер null, но радио должно быть остановлено, устанавливаем false
-      if (_audioService.isRadioStopped) {
-        _playingNotifier.value = false;
       }
     }
   }

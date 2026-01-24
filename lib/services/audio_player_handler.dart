@@ -1,5 +1,4 @@
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/foundation.dart'; 
 import 'package:flutter/widgets.dart'; // ADDED: Import for WidgetsBinding
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
@@ -393,22 +392,39 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   @override
   Future<void> pause() async {
-      if (_isHandlingControl) return;
-      _isHandlingControl = true;
+    if (_isHandlingControl) return;
+    _isHandlingControl = true;
+    
+    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+    try {
+      // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
+      await audioPlayerService.pause();
       
-      debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-      try {
-          // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
-          await audioPlayerService.pause();
-          
-          // Немедленно обновляем состояние
+      // Немедленно обновляем состояние
+      updatePlaybackState(false);
+      
+      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем UI через forceUpdateUI
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
+          // Для подкаста просто обновляем состояние паузы
           updatePlaybackState(false);
-          
-      } catch (e) {
-          debugPrint('Error in background pause: $e');
-      } finally {
-          _isHandlingControl = false;
-      }
+        } else {
+          // Для радио: принудительно обновляем UI с состоянием паузы
+          forceUpdateUI(false);
+          // Также обновляем метаданные для радио
+          if (audioPlayerService.currentMetadata != null) {
+            updateMetadata(audioPlayerService.currentMetadata!);
+          }
+        }
+      });
+      
+    } catch (e) {
+      debugPrint('Error in background pause: $e');
+      // Даже при ошибке обновляем состояние
+      updatePlaybackState(false);
+    } finally {
+      _isHandlingControl = false;
+    }
   }
     
   // Новый метод для принудительного обновления UI
