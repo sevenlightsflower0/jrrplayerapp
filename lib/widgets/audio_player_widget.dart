@@ -79,6 +79,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
     // Подписываемся на изменения состояния плеера напрямую
     _setupPlayerStateListener();
+    // Запускаем периодическую синхронизацию каждую секунду
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _syncPlayerState();
+    });
   }
 
   void _setupPlayerStateListener() {

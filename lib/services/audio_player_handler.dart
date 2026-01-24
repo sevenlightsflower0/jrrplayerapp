@@ -397,29 +397,35 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
-      await audioPlayerService.pause();
+      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сначала получаем текущее состояние
+      final player = audioPlayerService.getPlayer();
+      final wasPlaying = player?.playing ?? false;
       
-      // Немедленно обновляем состояние
-      updatePlaybackState(false);
+      debugPrint('Background pause: player was playing = $wasPlaying');
       
-      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обновляем UI через forceUpdateUI
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-          // Для подкаста просто обновляем состояние паузы
-          updatePlaybackState(false);
-        } else {
-          // Для радио: принудительно обновляем UI с состоянием паузы
-          forceUpdateUI(false);
-          // Также обновляем метаданные для радио
-          if (audioPlayerService.currentMetadata != null) {
-            updateMetadata(audioPlayerService.currentMetadata!);
-          }
-        }
-      });
+      if (wasPlaying) {
+        // Вызываем pause() сервиса
+        await audioPlayerService.pause();
+        await audioPlayerService.forceSyncFromBackground();
+        
+        // ✅ НЕМЕДЛЕННОЕ обновление состояния без задержек
+        updatePlaybackState(false);
+        
+        // ✅ ПРИНУДИТЕЛЬНО обновляем UI через сервис
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Вместо вызова приватного метода используем публичный
+          audioPlayerService.forceSyncFromBackground();
+        });
+        
+        debugPrint('Background pause: audio paused and state updated');
+      } else {
+        debugPrint('Background pause: player was already paused, skipping');
+        updatePlaybackState(false);
+      }
       
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Error in background pause: $e');
+      debugPrint('Stack trace: $stackTrace');
       // Даже при ошибке обновляем состояние
       updatePlaybackState(false);
     } finally {
