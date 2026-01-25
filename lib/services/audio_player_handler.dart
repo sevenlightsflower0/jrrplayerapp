@@ -347,7 +347,17 @@ class AudioPlayerHandler extends BaseAudioHandler {
       if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
         debugPrint('Background audio: service not initialized, initializing...');
         await audioPlayerService.initialize();
-        await Future.delayed(const Duration(milliseconds: 500)); // Даем время на инициализацию
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      
+      final player = audioPlayerService.getPlayer();
+      final isCurrentlyPlaying = player?.playing ?? false;
+      
+      // ✅ ИСПРАВЛЕНИЕ: Проверяем текущее состояние
+      if (isCurrentlyPlaying) {
+        debugPrint('Background: Player is already playing, ignoring play command');
+        updatePlaybackState(true);
+        return;
       }
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
@@ -364,9 +374,18 @@ class AudioPlayerHandler extends BaseAudioHandler {
           debugPrint('No player available for podcast');
         }
       } else {
-        // РАДИО: вызываем playRadio() напрямую
-        debugPrint('Background: Starting radio...');
-        await audioPlayerService.playRadio();
+        // ✅ ИСПРАВЛЕНИЕ: Для радио проверяем, не на паузе ли оно
+        debugPrint('Background: Checking radio state...');
+        
+        if (audioPlayerService.isRadioPaused) {
+          // Радио на паузе - возобновляем
+          debugPrint('Background: Resuming radio from pause');
+          await audioPlayerService.resumeRadioFromPause();
+        } else {
+          // Радио остановлено - запускаем заново
+          debugPrint('Background: Starting radio fresh...');
+          await audioPlayerService.playRadio();
+        }
       }
       
       // Обновляем состояние после небольшой задержки для синхронизации
@@ -406,16 +425,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
       if (wasPlaying) {
         // Вызываем pause() сервиса
         await audioPlayerService.pause();
-        await audioPlayerService.forceSyncFromBackground();
         
-        // ✅ НЕМЕДЛЕННОЕ обновление состояния без задержек
+        // ✅ ИСПРАВЛЕНИЕ: Убеждаемся, что состояние синхронизировано
+        // Сначала обновляем локальное состояние
         updatePlaybackState(false);
         
-        // ✅ ПРИНУДИТЕЛЬНО обновляем UI через сервис
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // Вместо вызова приватного метода используем публичный
-          audioPlayerService.forceSyncFromBackground();
-        });
+        // Затем синхронизируем с сервисом
+        await audioPlayerService.forceSyncFromBackground();
         
         debugPrint('Background pause: audio paused and state updated');
       } else {

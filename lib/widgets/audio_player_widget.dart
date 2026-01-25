@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 /// A tiny wrapper that turns a [Stream<T>] into a [ValueListenable<T>].
@@ -207,7 +208,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       if (isCurrentlyPlaying) {
         // ✅ УНИФИЦИРОВАННО: всегда вызываем pause() сервиса
         debugPrint('🎵 Switching to PAUSE');
-        await _audioService.pause(); // Этот метод должен одинаково работать для всех режимов
+        await _audioService.pause();
       } else {
         debugPrint('🎵 Switching to PLAY');
         
@@ -215,12 +216,21 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
           // Подкаст: воспроизведение через сервис
           await _audioService.playPodcast(_audioService.currentEpisode!);
         } else {
-          // Радио: проверяем, не на паузе ли оно
-          if (_audioService.isRadioPaused) {
-            debugPrint('🎵 Radio is paused - resuming');
+          // ✅ ИСПРАВЛЕНИЕ: Улучшенная логика для радио
+          final player = _audioService.getPlayer();
+          final isRadioPaused = _audioService.isRadioPaused;
+          final isRadioStopped = _audioService.isRadioStopped;
+          
+          debugPrint('🎵 Radio state: paused=$isRadioPaused, stopped=$isRadioStopped');
+          
+          if (isRadioPaused) {
+            debugPrint('🎵 Radio is paused - resuming from pause');
             await _audioService.resumeRadioFromPause();
-          } else {
+          } else if (isRadioStopped || player?.processingState == ProcessingState.idle) {
             debugPrint('🎵 Radio is stopped - starting fresh');
+            await _audioService.playRadio();
+          } else {
+            debugPrint('🎵 Radio in unknown state - attempting to play');
             await _audioService.playRadio();
           }
         }

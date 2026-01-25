@@ -1192,16 +1192,22 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
-  // ✅ НОВЫЙ МЕТОД: Прямая синхронизация состояния с UI
   Future<void> _syncStateWithUI(bool isPlaying) async {
     if (!_isInitialized || _isDisposed) return;
     
-    debugPrint('Syncing state with UI: isPlaying=$isPlaying');
+    debugPrint('Syncing state with UI: isPlaying=$isPlaying, isRadioPaused=$isRadioPaused');
     
     try {
-      // Обновляем внутренние флаги
+      // ✅ ИСПРАВЛЕНИЕ: Правильно обновляем флаг остановки
       if (!isPlaying && !_isPodcastMode) {
-        _isRadioStopped = false; // Не полная остановка, а пауза
+        // Если радио не играет, но не в режиме подкаста
+        if (_player?.processingState == ProcessingState.ready) {
+          _isRadioStopped = false; // Это пауза, а не полная остановка
+          debugPrint('Radio state: Paused (ready)');
+        } else if (_player?.processingState == ProcessingState.idle) {
+          _isRadioStopped = true; // Полная остановка
+          debugPrint('Radio state: Stopped (idle)');
+        }
       }
       
       // СИНХРОННОЕ уведомление
@@ -1209,7 +1215,7 @@ class AudioPlayerService with ChangeNotifier {
       
       // Дополнительная синхронизация для надежности
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_isDisposed) { // Исправлено: вместо mounted используем _isDisposed
+        if (!_isDisposed) {
           notifyListeners();
         }
       });
@@ -1218,7 +1224,7 @@ class AudioPlayerService with ChangeNotifier {
       debugPrint('Error in _syncStateWithUI: $e');
     }
   }
-  
+
   // ✅ ДОБАВЬТЕ ЭТОТ ПУБЛИЧНЫЙ МЕТОД (вставьте в класс AudioPlayerService)
   Future<void> notifyPlaybackState(bool isPlaying) async {
     if (_isDisposed) return;
@@ -1281,24 +1287,42 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
   
-  // Упрощенный resumeRadioFromPause():
+  // Добавьте этот метод в класс AudioPlayerService
+  bool get isRadioPausedManually {
+    return !_isPodcastMode && 
+          !_isRadioStopped && 
+          (_player?.playing == false) &&
+          (_player?.processingState == ProcessingState.ready);
+  }
+
+  // И обновите resumeRadioFromPause для лучшей обработки:
   Future<void> resumeRadioFromPause() async {
     try {
       final player = getPlayer();
       if (player != null && !player.playing && !_isPodcastMode && !_isRadioStopped) {
-        debugPrint('🎵 Resuming radio from pause');
+        debugPrint('🎵 Resuming radio from pause - confirmed state');
         
-        await player.play();
-        
-        // Запускаем таймер метаданных для Web
-        if (kIsWeb) {
-          _startWebMetadataPolling();
+        // Дополнительная проверка состояния
+        if (player.processingState == ProcessingState.ready) {
+          await player.play();
+          
+          // Запускаем таймер метаданных для Web
+          if (kIsWeb) {
+            _startWebMetadataPolling();
+          }
+          
+          // Обновляем состояние
+          _isRadioStopped = false;
+          
+          // Синхронизация с UI
+          await _syncStateWithUI(true);
+          
+          debugPrint('🎵 Radio resumed from pause successfully');
+        } else {
+          debugPrint('🎵 Cannot resume radio: invalid processing state ${player.processingState}');
+          // Если состояние не ready, перезапускаем
+          await playRadio();
         }
-        
-        // Синхронизация с UI
-        await _syncStateWithUI(true);
-        
-        debugPrint('🎵 Radio resumed from pause');
       } else {
         debugPrint('🎵 Cannot resume radio: ${player == null ? "player null" : ""} '
                   '${_isPodcastMode ? "podcast mode" : ""} '
@@ -1306,6 +1330,12 @@ class AudioPlayerService with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('🎵 Error resuming radio from pause: $e');
+      // При ошибке пытаемся перезапустить
+      try {
+        await playRadio();
+      } catch (e2) {
+        debugPrint('🎵 Failed to restart radio: $e2');
+      }
     }
   }
 
