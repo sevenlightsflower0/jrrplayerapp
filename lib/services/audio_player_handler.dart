@@ -367,11 +367,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
           debugPrint('🎵 Podcast resumed from background');
         }
       } else {
-        // Радио
         debugPrint('🎵 Background: Handling radio play');
-        
-        // ✅ ИСПРАВЛЕНИЕ: Используем метод toggleRadio, который сам решит что делать
-        await audioPlayerService.toggleRadio();
+         // Радио - унифицированная логика
+        if (audioPlayerService.isRadioPaused) {
+          await audioPlayerService.resumeRadioFromPause();
+        } else if (audioPlayerService.isRadioStopped || 
+                  player?.processingState == ProcessingState.idle) {
+          await audioPlayerService.playRadio();
+        } else {
+          await audioPlayerService.playRadio();
+        }
       }
       
       // ✅ ИСПРАВЛЕНИЕ: Обновляем состояние СРАЗУ без задержки
@@ -401,18 +406,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('🎵 Background pause: player was playing = $wasPlaying');
       
       if (wasPlaying) {
-        // ✅ ИСПРАВЛЕНИЕ: Для радио используем pauseRadio(), для подкаста - pause()
+        // ✅ ИЗМЕНЕНИЕ: В заблокированном режиме всегда используем stop для радио
+        // Для подкаста - pause(), для радио - stopRadio()
         if (audioPlayerService.isPodcastMode) {
           await audioPlayerService.pause();
+          debugPrint('🎵 Background pause: podcast paused');
         } else {
+          // В заблокированном режиме радио полностью останавливается
           await audioPlayerService.pauseRadio();
+          debugPrint('🎵 Background pause: radio paused (lock screen behavior)');
         }
         
-        debugPrint('🎵 Background pause: audio paused successfully');
+        debugPrint('🎵 Background pause: audio handled successfully');
       } else {
-        debugPrint('🎵 Background pause: player was already paused');
+        debugPrint('🎵 Background pause: player was already paused/stopped');
       }
-      
       // ✅ ИСПРАВЛЕНИЕ: Обновляем состояние СРАЗУ
       updatePlaybackState(false);
       
