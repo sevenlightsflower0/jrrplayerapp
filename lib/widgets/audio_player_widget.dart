@@ -50,6 +50,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     // Запускаем периодическую проверку состояния
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndSyncState();
+      _printRadioState();
     });
   
     // Подписываемся на поток состояний
@@ -88,6 +89,21 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       }
       _syncPlayerState();
     });
+  }
+
+  // Добавьте этот метод в класс _AudioPlayerWidgetState
+  void _printRadioState() {
+    if (!_audioService.isPodcastMode) {
+      final player = _audioService.getPlayer();
+      debugPrint('=== RADIO STATE DEBUG ===');
+      debugPrint('🎵 player.playing: ${player?.playing}');
+      debugPrint('🎵 service.isPlaying: ${_audioService.isPlaying}');
+      debugPrint('🎵 isRadioPlaying: ${_audioService.isRadioPlaying}');
+      debugPrint('🎵 isRadioPaused: ${_audioService.isRadioPaused}');
+      debugPrint('🎵 isRadioStopped: ${_audioService.isRadioStopped}');
+      debugPrint('🎵 processingState: ${player?.processingState}');
+      debugPrint('=== END DEBUG ===');
+    }
   }
 
   void _setupPlayerStateListener() {
@@ -508,6 +524,13 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                             _syncPlayerState();
                           },
                           child: const Text('Reset State (Debug)'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            _printRadioState();
+                            _checkAndSyncState();
+                          },
+                          child: const Text('Debug State'),
                         ),
                       ],
                     ),

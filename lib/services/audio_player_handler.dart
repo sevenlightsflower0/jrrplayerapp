@@ -341,11 +341,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
     if (_isHandlingControl) return;
     _isHandlingControl = true;
     
-    debugPrint('Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+    debugPrint('🎵 Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Гарантируем инициализацию сервиса
+      // Гарантируем инициализацию сервиса
       if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
-        debugPrint('Background audio: service not initialized, initializing...');
+        debugPrint('🎵 Background audio: service not initialized, initializing...');
         await audioPlayerService.initialize();
         await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -353,57 +353,36 @@ class AudioPlayerHandler extends BaseAudioHandler {
       final player = audioPlayerService.getPlayer();
       final isCurrentlyPlaying = player?.playing ?? false;
       
-      // ✅ ИСПРАВЛЕНИЕ: Проверяем текущее состояние
-      if (isCurrentlyPlaying) {
-        debugPrint('Background: Player is already playing, ignoring play command');
-        updatePlaybackState(true);
-        return;
-      }
+      debugPrint('🎵 Background play: current playing state = $isCurrentlyPlaying');
+      debugPrint('🎵 Background play: isRadioPlaying = ${audioPlayerService.isRadioPlaying}');
+      debugPrint('🎵 Background play: isRadioPaused = ${audioPlayerService.isRadioPaused}');
+      debugPrint('🎵 Background play: isRadioStopped = ${audioPlayerService.isRadioStopped}');
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        // Подкаст: используем ТОЧНО ТУ ЖЕ логику, что и в основном UI
+        // Подкаст
+        debugPrint('🎵 Background: Playing podcast');
         final player = audioPlayerService.getPlayer();
-        if (player != null) {
-          if (!player.playing) {
-            await player.play();
-            debugPrint('Podcast resumed from background');
-          } else {
-            debugPrint('Podcast already playing, ignoring play command');
-          }
-        } else {
-          debugPrint('No player available for podcast');
+        if (player != null && !player.playing) {
+          await player.play();
+          debugPrint('🎵 Podcast resumed from background');
         }
       } else {
-        // ✅ ИСПРАВЛЕНИЕ: Для радио проверяем, не на паузе ли оно
-        debugPrint('Background: Checking radio state...');
+        // Радио
+        debugPrint('🎵 Background: Handling radio play');
         
-        if (audioPlayerService.isRadioPaused) {
-          // Радио на паузе - возобновляем
-          debugPrint('Background: Resuming radio from pause');
-          await audioPlayerService.resumeRadioFromPause();
-        } else {
-          // Радио остановлено - запускаем заново
-          debugPrint('Background: Starting radio fresh...');
-          await audioPlayerService.playRadio();
-        }
+        // ✅ ИСПРАВЛЕНИЕ: Используем метод toggleRadio, который сам решит что делать
+        await audioPlayerService.toggleRadio();
       }
       
-      // Обновляем состояние после небольшой задержки для синхронизации
-      await Future.delayed(const Duration(milliseconds: 300), () {
-        updatePlaybackState(true);
-        _onAudioServiceUpdate();
-      });
+      // ✅ ИСПРАВЛЕНИЕ: Обновляем состояние СРАЗУ без задержки
+      final newPlayingState = audioPlayerService.isPlaying;
+      debugPrint('🎵 Background: Updating playback state to $newPlayingState');
+      updatePlaybackState(newPlayingState);
       
     } catch (e, stackTrace) {
-      debugPrint('Error in background play: $e');
+      debugPrint('🎵 Error in background play: $e');
       debugPrint('Stack trace: $stackTrace');
-      
-      // Пытаемся восстановить состояние
-      try {
-        if (!audioPlayerService.isPodcastMode) {
-          updatePlaybackState(false);
-        }
-      } catch (_) {}
+      updatePlaybackState(false);
     } finally {
       _isHandlingControl = false;
     }
@@ -414,35 +393,32 @@ class AudioPlayerHandler extends BaseAudioHandler {
     if (_isHandlingControl) return;
     _isHandlingControl = true;
     
-    debugPrint('Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+    debugPrint('🎵 Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
     try {
-      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сначала получаем текущее состояние
       final player = audioPlayerService.getPlayer();
       final wasPlaying = player?.playing ?? false;
       
-      debugPrint('Background pause: player was playing = $wasPlaying');
+      debugPrint('🎵 Background pause: player was playing = $wasPlaying');
       
       if (wasPlaying) {
-        // Вызываем pause() сервиса
-        await audioPlayerService.pause();
+        // ✅ ИСПРАВЛЕНИЕ: Для радио используем pauseRadio(), для подкаста - pause()
+        if (audioPlayerService.isPodcastMode) {
+          await audioPlayerService.pause();
+        } else {
+          await audioPlayerService.pauseRadio();
+        }
         
-        // ✅ ИСПРАВЛЕНИЕ: Убеждаемся, что состояние синхронизировано
-        // Сначала обновляем локальное состояние
-        updatePlaybackState(false);
-        
-        // Затем синхронизируем с сервисом
-        await audioPlayerService.forceSyncFromBackground();
-        
-        debugPrint('Background pause: audio paused and state updated');
+        debugPrint('🎵 Background pause: audio paused successfully');
       } else {
-        debugPrint('Background pause: player was already paused, skipping');
-        updatePlaybackState(false);
+        debugPrint('🎵 Background pause: player was already paused');
       }
       
+      // ✅ ИСПРАВЛЕНИЕ: Обновляем состояние СРАЗУ
+      updatePlaybackState(false);
+      
     } catch (e, stackTrace) {
-      debugPrint('Error in background pause: $e');
+      debugPrint('🎵 Error in background pause: $e');
       debugPrint('Stack trace: $stackTrace');
-      // Даже при ошибке обновляем состояние
       updatePlaybackState(false);
     } finally {
       _isHandlingControl = false;
