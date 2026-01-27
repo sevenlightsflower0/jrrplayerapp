@@ -139,25 +139,75 @@ class PodcastRepository with ChangeNotifier {
     }
   }
 
-  // Метод для очистки репозитория
-  void clear() {
-    _episodes.clear();
-    _durations.clear();
-    _episodeCache.clear();
-    notifyListeners();
-  }
-
   // Метод для добавления одного эпизода
   void addEpisode(PodcastEpisode episode) {
     _episodes.add(episode);
     notifyListeners();
   }
 
-  // Метод для удаления эпизода по ID
+  // В класс PodcastRepository добавьте следующие поля и методы:
+
+  final Map<String, Duration> _positions = {}; // Добавьте это поле
+
+  // Метод для получения позиции эпизода
+  Duration? getEpisodePosition(String episodeId) {
+    return _positions[episodeId];
+  }
+
+  // Метод для обновления позиции эпизода
+  void updateEpisodePosition(String episodeId, Duration position) {
+    _positions[episodeId] = position;
+    // Сохраняем в хранилище
+    _savePositionsToStorage();
+    notifyListeners();
+  }
+
+  // Метод для сохранения позиций в хранилище
+  Future<void> _savePositionsToStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final positionsMap = _positions.map((key, value) => 
+        MapEntry(key, value.inSeconds.toString()));
+      await prefs.setString('podcast_positions', jsonEncode(positionsMap));
+    } catch (e) {
+      debugPrint('Error saving positions to storage: $e');
+    }
+  }
+
+  // Метод для загрузки позиций из хранилища
+  Future<void> loadPositionsFromStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final positionsJson = prefs.getString('podcast_positions');
+      if (positionsJson != null) {
+        final Map<String, dynamic> positionsMap = jsonDecode(positionsJson);
+        positionsMap.forEach((key, value) {
+          if (value is String) {
+            _positions[key] = Duration(seconds: int.tryParse(value) ?? 0);
+          }
+        });
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error loading positions from storage: $e');
+    }
+  }
+
+  // В методе clear() добавьте очистку позиций
+  void clear() {
+    _episodes.clear();
+    _durations.clear();
+    _positions.clear(); // Добавьте эту строку
+    _episodeCache.clear();
+    notifyListeners();
+  }
+
+  // В методе removeEpisode добавьте удаление позиции
   void removeEpisode(String id) {
     _episodes.removeWhere((episode) => episode.id == id);
     _durations.remove(id);
+    _positions.remove(id); // Добавьте эту строку
     _episodeCache.remove(id);
     notifyListeners();
   }
-}
+  }

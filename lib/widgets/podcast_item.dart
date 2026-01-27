@@ -1,4 +1,4 @@
-import 'dart:async'; // Добавляем импорт для StreamSubscription
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:jrrplayerapp/repositories/podcast_repository.dart';
@@ -7,7 +7,7 @@ import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/models/podcast.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:just_audio/just_audio.dart'; // Добавляем импорт для ProcessingState
+import 'package:just_audio/just_audio.dart';
 
 class PodcastItem extends StatefulWidget {
   final PodcastEpisode podcast;
@@ -24,6 +24,7 @@ class _PodcastItemState extends State<PodcastItem> {
   double _sliderValue = 0.0;
   Duration _currentPosition = Duration.zero;
   late AudioPlayerService _audioService;
+  late PodcastRepository _podcastRepo;
   Duration? _cachedDuration;
   StreamSubscription<Duration>? _positionSubscription;
 
@@ -31,19 +32,44 @@ class _PodcastItemState extends State<PodcastItem> {
   void initState() {
     super.initState();
     _audioService = Provider.of<AudioPlayerService>(context, listen: false);
+    _podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
     
-    // Инициализируем начальную позицию
-    _initializeCurrentPosition();
+    // Загружаем сохраненную позицию для этого подкаста
+    _loadSavedPosition();
     
     // Слушаем изменения метаданных для обновления длительности
     _audioService.addListener(_onAudioServiceUpdate);
+    // Слушаем изменения в репозитории
+    _podcastRepo.addListener(_onPodcastRepoUpdate);
   }
 
-  Future<void> _initializeCurrentPosition() async {
-    // Загружаем сохраненную позицию для этого подкаста
-    if (mounted) {
-      // Можно добавить загрузку из SharedPreferences
-      _currentPosition = Duration.zero; // По умолчанию
+  Future<void> _loadSavedPosition() async {
+    // Загружаем сохраненную позицию из репозитория
+    final savedPosition = _podcastRepo.getEpisodePosition(widget.podcast.id);
+    if (savedPosition != null && mounted) {
+      setState(() {
+        _currentPosition = savedPosition;
+        // Вычисляем значение для слайдера
+        final actualDuration = _getActualDuration();
+        if (actualDuration != null && actualDuration.inMilliseconds > 0) {
+          _sliderValue = savedPosition.inMilliseconds / actualDuration.inMilliseconds;
+        }
+      });
+    }
+  }
+
+  void _onPodcastRepoUpdate() {
+    // Обновляем позицию, если она изменилась в репозитории
+    final savedPosition = _podcastRepo.getEpisodePosition(widget.podcast.id);
+    if (savedPosition != null && savedPosition != _currentPosition && !_isSeeking) {
+      setState(() {
+        _currentPosition = savedPosition;
+        // Вычисляем значение для слайдера
+        final actualDuration = _getActualDuration();
+        if (actualDuration != null && actualDuration.inMilliseconds > 0) {
+          _sliderValue = savedPosition.inMilliseconds / actualDuration.inMilliseconds;
+        }
+      });
     }
   }
 
@@ -64,6 +90,7 @@ class _PodcastItemState extends State<PodcastItem> {
   @override
   void dispose() {
     _audioService.removeListener(_onAudioServiceUpdate);
+    _podcastRepo.removeListener(_onPodcastRepoUpdate);
     _positionSubscription?.cancel();
     super.dispose();
   }
@@ -136,6 +163,9 @@ class _PodcastItemState extends State<PodcastItem> {
       _sliderValue = value;
     });
     
+    // Сохраняем позицию в репозитории
+    _podcastRepo.updateEpisodePosition(widget.podcast.id, newPosition);
+    
     // Ищем в аудио
     audioService.seekPodcast(newPosition);
   }
@@ -192,16 +222,15 @@ class _PodcastItemState extends State<PodcastItem> {
            audioService.isPodcastMode &&
            (audioService.playerState?.processingState == ProcessingState.buffering ||
             audioService.playerState?.processingState == ProcessingState.loading ||
-            _audioService.isBuffering); // Используем флаг isBuffering из сервиса
+            audioService.isBuffering);
   }
 
   @override
   Widget build(BuildContext context) {
     final audioService = Provider.of<AudioPlayerService>(context, listen: true);
-    final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
     
     // Получаем эпизод из репозитория
-    final podcast = podcastRepo.getEpisodeById(widget.podcast.id);
+    final podcast = _podcastRepo.getEpisodeById(widget.podcast.id);
     if (podcast == null) {
       debugPrint('Podcast not found in repository: ${widget.podcast.id}');
       return const SizedBox();
@@ -221,11 +250,20 @@ class _PodcastItemState extends State<PodcastItem> {
               _sliderValue = position.inMilliseconds / actualDuration.inMilliseconds;
             }
           });
+          
+          // Автоматически сохраняем позицию каждые 5 секунд
+          // чтобы не перегружать хранилище
+          if (position.inSeconds % 5 == 0) {
+            _podcastRepo.updateEpisodePosition(widget.podcast.id, position);
+          }
         }
       });
     } else if (!isPlaying && _positionSubscription != null) {
       _positionSubscription?.cancel();
       _positionSubscription = null;
+      
+      // Сохраняем финальную позицию при остановке воспроизведения
+      _podcastRepo.updateEpisodePosition(widget.podcast.id, _currentPosition);
     }
 
     final progress = actualDuration?.inMilliseconds != null && actualDuration!.inMilliseconds > 0 
@@ -249,14 +287,14 @@ class _PodcastItemState extends State<PodcastItem> {
             Row(
               children: [
                 _buildImage(),
-                const SizedBox(width: 8), // Увеличил отступ для лучшего вида
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     widget.podcast.title,
                     style: const TextStyle(
                       color: Colors.white, 
                       fontSize: 12,
-                      height: 1.2 // Уменьшаем межстрочный интервал
+                      height: 1.2
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -266,7 +304,7 @@ class _PodcastItemState extends State<PodcastItem> {
                     ? const Padding(
                         padding: EdgeInsets.all(8.0),
                         child: SizedBox(
-                          width: 16, // Уменьшил размер индикатора
+                          width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
@@ -284,7 +322,7 @@ class _PodcastItemState extends State<PodcastItem> {
                           colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
                         ),
                         onPressed: () => _togglePlayPause(audioService),
-                        padding: EdgeInsets.zero, // Уменьшаем отступы
+                        padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
                           minWidth: 36,
                           minHeight: 36,
@@ -292,8 +330,7 @@ class _PodcastItemState extends State<PodcastItem> {
                       ),
               ],
             ),
-
-            const SizedBox(height: 6), // Уменьшил отступ
+            const SizedBox(height: 6),
             Row(
               children: [
                 // Проигранное время (слева)
@@ -301,17 +338,17 @@ class _PodcastItemState extends State<PodcastItem> {
                   _formatDuration(_currentPosition),
                   style: const TextStyle(
                     color: Colors.white, 
-                    fontSize: 10, // Уменьшил шрифт
+                    fontSize: 10,
                     fontWeight: FontWeight.bold
                   ),
                 ),
-                const SizedBox(width: 6), // Уменьшил отступ
+                const SizedBox(width: 6),
                 Expanded(
                   child: SliderTheme(
                     data: SliderTheme.of(context).copyWith(
-                      trackHeight: 6, // Уменьшил высоту трека
-                      thumbShape: const CustomVerticalThumbShape(), // Убрал подчеркивание
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12), // Уменьшил область касания
+                      trackHeight: 6,
+                      thumbShape: const CustomVerticalThumbShape(),
+                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                       activeTrackColor: AppColors.customWhite,
                       inactiveTrackColor: AppColors.customWhiteTransp,
                       thumbColor: Colors.white,
@@ -341,13 +378,13 @@ class _PodcastItemState extends State<PodcastItem> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6), // Уменьшил отступ
+                const SizedBox(width: 6),
                 // Оставшееся время (справа)
                 Text(
                   _formatDuration(actualDuration),
                   style: const TextStyle(
                     color: Colors.white, 
-                    fontSize: 10, // Уменьшил шрифт
+                    fontSize: 10,
                     fontWeight: FontWeight.bold
                   ),
                 ),
@@ -360,14 +397,13 @@ class _PodcastItemState extends State<PodcastItem> {
   }
 }
 
-// ВЫНЕСЕННЫЙ ОТДЕЛЬНЫЙ КЛАСС (не внутри _PodcastItemState)
 // Thumb в виде вертикальной полосы, равной по высоте полосе прогресса
 class CustomVerticalThumbShape extends SliderComponentShape {
   const CustomVerticalThumbShape();
 
   @override
   Size getPreferredSize(bool isEnabled, bool isDiscrete) {
-    return const Size(12, 18); // Уменьшил область касания
+    return const Size(12, 18);
   }
 
   @override
@@ -398,8 +434,8 @@ class CustomVerticalThumbShape extends SliderComponentShape {
     // Рисуем вертикальную полосу высотой 6 (как trackHeight) и шириной 3
     final rect = Rect.fromCenter(
       center: center,
-      width: 3, // Уменьшил ширину
-      height: 6, // Уменьшил высоту
+      width: 3,
+      height: 6,
     );
     
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2));
