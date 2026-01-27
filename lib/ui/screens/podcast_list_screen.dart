@@ -155,77 +155,6 @@ List<PodcastEpisode> _parseRssFull(String responseBody) {
 }
 
 // Быстрый парсер тоже обновим для извлечения изображений (но только самые простые способы)
-List<PodcastEpisode> _parseRssQuickly(String responseBody, {int limit = 20}) {
-  try {
-    final document = xml.XmlDocument.parse(responseBody);
-    
-    // Быстрый поиск items
-    var items = document.findAllElements('item').toList();
-    if (items.isEmpty) {
-      final channel = document.findAllElements('channel').firstOrNull;
-      items = channel?.findElements('item').toList() ?? [];
-    }
-    
-    if (items.isEmpty) return [];
-
-    // Быстрое получение изображения канала
-    String? channelImageUrl;
-    final channel = document.findAllElements('channel').firstOrNull;
-    if (channel != null) {
-      final itunesImage = channel.findElements('itunes:image').firstOrNull;
-      if (itunesImage != null) {
-        channelImageUrl = itunesImage.getAttribute('href')?.trim();
-      }
-    }
-
-    List<PodcastEpisode> podcasts = [];
-    int parsedCount = 0;
-
-    for (var item in items) {
-      if (parsedCount >= limit) break;
-      
-      try {
-        // Только необходимые поля для быстрой загрузки
-        final title = item.findElements('title').firstOrNull?.innerText.trim() ?? 'Без названия';
-        final audioUrl = item.findElements('enclosure').firstOrNull?.getAttribute('url') ?? '';
-        
-        if (audioUrl.isEmpty) continue;
-        
-        final guid = item.findElements('guid').firstOrNull?.innerText.trim() ?? '${parsedCount}_${DateTime.now().millisecondsSinceEpoch}';
-        
-        // Быстрое извлечение изображения (только itunes:image)
-        String? episodeImageUrl;
-        final itunesImage = item.findElements('itunes:image').firstOrNull;
-        if (itunesImage != null) {
-          episodeImageUrl = itunesImage.getAttribute('href')?.trim();
-        }
-        
-        podcasts.add(PodcastEpisode(
-          id: guid,
-          title: title,
-          audioUrl: audioUrl,
-          imageUrl: episodeImageUrl, // Добавляем изображение
-          channelImageUrl: channelImageUrl, // Изображение канала
-          description: '', // Пропускаем для скорости
-          duration: Duration.zero,
-          publishedDate: DateTime.now(),
-          channelId: 'jrr_podcast_channel',
-          channelTitle: 'J-Rock Radio Podcasts',
-        ));
-        
-        parsedCount++;
-      } catch (_) {
-        continue;
-      }
-    }
-
-    return podcasts;
-  } catch (e) {
-    debugPrint('Quick parse error: $e');
-    return [];
-  }
-}
-
 Duration _parseDuration(String durationString) {
   try {
     if (!durationString.contains(':')) {
@@ -471,67 +400,8 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
   Future<void> _loadWithMobile() async {
     _updateStatus('Оптимизированная загрузка...');
     
-    // 1. Загружаем быстрый минимум
-    await _loadQuickPodcasts();
-    
-    // 2. Если есть что показать, загружаем остальное в фоне
-    if (podcasts.isNotEmpty) {
-      _fetchFullPodcastsInBackground();
-    } else {
-      // 3. Если минимум не загрузился, пробуем полную загрузку
-      await _fetchFullPodcasts();
-    }
-  }
-
-  Future<void> _loadQuickPodcasts() async {
-    try {
-      _updateStatus('Загрузка быстрого доступа...');
-      
-      final proxyUrl = await _getBestProxyUrl();
-      final client = http.Client();
-      
-      final response = await client.send(
-        http.Request('GET', Uri.parse(proxyUrl))
-          ..headers['Accept-Encoding'] = 'gzip'
-      ).timeout(const Duration(seconds: 10));
-      
-      if (response.statusCode == 200) {
-        // Читаем только первые 50KB
-        final bytes = await _readStreamBytes(response.stream, limit: 50000);
-        final responseBody = utf8.decode(bytes);
-        
-        // Быстрый парсинг
-        List<PodcastEpisode> quickPodcasts;
-        if (kIsWeb) {
-          quickPodcasts = _parseRssQuickly(responseBody, limit: 10);
-        } else {
-          quickPodcasts = await compute(
-            (body) => _parseRssQuickly(body, limit: 10),
-            responseBody
-          );
-        }
-        
-        if (quickPodcasts.isNotEmpty && mounted) {
-          final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
-          podcastRepo.setEpisodes(quickPodcasts);
-          
-          setState(() {
-            podcasts = quickPodcasts.take(pageSize).toList();
-            isLoading = false;
-            hasMore = quickPodcasts.length > pageSize;
-            errorMessage = '';
-          });
-          
-          await _saveToCache(responseBody);
-        }
-      }
-      
-      client.close();
-    } catch (e) {
-      debugPrint('Quick load error: $e');
-      // Пробуем кэш
-      await _loadFromCache();
-    }
+    // Просто загружаем полные данные (но отображаем только 10)
+    await _fetchFullPodcasts();
   }
 
   Future<List<int>> _readStreamBytes(Stream<List<int>> stream, {int? limit}) async {
@@ -547,7 +417,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
 
   Future<void> _fetchFullPodcasts() async {
     try {
-      _updateStatus('Загрузка полного списка...');
+      _updateStatus('Загрузка подкастов...');
       
       final proxyUrl = await _getBestProxyUrl();
       final client = http.Client();
@@ -564,10 +434,10 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
         final bytes = await _readStreamBytes(response.stream);
         final responseBody = utf8.decode(bytes);
         
-        // Сохраняем в кэш
+        // Сохраняем весь RSS в кэш
         await _saveToCache(responseBody);
         
-        // Парсим полную версию
+        // Парсим все подкасты для репозитория, но в состояние добавляем только первые 10
         List<PodcastEpisode> fullPodcasts;
         if (kIsWeb) {
           fullPodcasts = _parseRssFull(responseBody);
@@ -581,12 +451,14 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
           podcastRepo.setEpisodes(fullPodcasts);
           
           fullPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
+          
+          // ВАЖНОЕ ИЗМЕНЕНИЕ: Берем только первые 10 для начального отображения
           final initialPodcasts = fullPodcasts.take(pageSize).toList();
           
           setState(() {
             podcasts = initialPodcasts;
             isLoading = false;
-            hasMore = fullPodcasts.length > pageSize;
+            hasMore = fullPodcasts.length > pageSize; // Устанавливаем флаг, есть ли еще
             errorMessage = '';
           });
         }
@@ -601,15 +473,6 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     }
   }
 
-  void _fetchFullPodcastsInBackground() {
-    Future.microtask(() async {
-      try {
-        await _fetchFullPodcasts();
-      } catch (e) {
-        debugPrint('Background fetch error: $e');
-      }
-    });
-  }
 
   Future<void> _loadFromCache({bool showOnlyIfValid = false}) async {
     try {
@@ -637,12 +500,14 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
             podcastRepo.setEpisodes(cachedPodcasts);
             
             cachedPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
+            
+            // ВАЖНОЕ ИЗМЕНЕНИЕ: Берем только первые 10 для начального отображения
             final initialPodcasts = cachedPodcasts.take(pageSize).toList();
             
             setState(() {
               podcasts = initialPodcasts;
               isLoading = false;
-              hasMore = cachedPodcasts.length > pageSize;
+              hasMore = cachedPodcasts.length > pageSize; // Устанавливаем флаг
               errorMessage = showOnlyIfValid ? '' : 'Используются кэшированные данные';
             });
             
@@ -738,14 +603,14 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     });
 
     try {
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 500));
       
       if (!mounted) return;
       
       final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
       final allEpisodes = podcastRepo.getSortedEpisodes();
       
-      final startIndex = currentPage * pageSize;
+      final startIndex = podcasts.length;
       final endIndex = startIndex + pageSize;
       
       if (startIndex < allEpisodes.length) {
@@ -757,7 +622,6 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
         if (mounted) {
           setState(() {
             podcasts.addAll(morePodcasts);
-            currentPage++;
             hasMore = endIndex < allEpisodes.length;
           });
         }
