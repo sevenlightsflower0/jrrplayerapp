@@ -83,7 +83,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!audioPlayerService.isDisposed) {
             updatePlaybackState(isPlaying);
-            // ✅ ИСПРАВЛЕНО: Используем публичный метод
             audioPlayerService.notifyListenersSafe();
           }
         });
@@ -95,7 +94,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!audioPlayerService.isDisposed) {
             updatePlaybackState(player.playing);
-            // ✅ ИСПРАВЛЕНО: Используем публичный метод
             audioPlayerService.notifyListenersSafe();
           }
         });
@@ -188,13 +186,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
       duration = audioPlayerService.currentEpisode?.duration;
     }
     
+    // ✅ ИСПРАВЛЕНИЕ: Используем дефолтную обложку из сервиса, если artUrl пустая или дефолтная
+    String artUrl = metadata.artUrl;
+    if (artUrl.isEmpty || 
+        artUrl == AudioMetadata.defaultCoverUrl || 
+        artUrl.contains('default_cover')) {
+      artUrl = audioPlayerService.getDefaultCoverUrlForBackground();
+    }
+    
     if (_currentMediaItem == null) {
       _currentMediaItem = MediaItem(
         id: metadata.artist == 'Live Stream' ? 'jrr_live_stream' : 'podcast_${DateTime.now().millisecondsSinceEpoch}',
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? '',
-        artUri: Uri.parse(metadata.artUrl),
+        artUri: _parseArtUri(artUrl), // ✅ Используем новый метод для парсинга URI
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
@@ -207,7 +213,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? _currentMediaItem!.album,
-        artUri: Uri.parse(metadata.artUrl),
+        artUri: _parseArtUri(artUrl), // ✅ Используем новый метод для парсинга URI
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
@@ -221,6 +227,31 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('Background audio metadata updated: ${metadata.title}');
     
     _updateControls();
+  }
+
+  // ✅ НОВЫЙ МЕТОД: Парсит URI для обложки в фоновом режиме
+  Uri? _parseArtUri(String artUrl) {
+    if (artUrl.isEmpty) {
+      return null;
+    }
+    
+    // Если это локальный asset путь
+    if (artUrl.startsWith('assets/') || artUrl.startsWith('images/')) {
+      // Для фонового режима нужно использовать схему asset
+      if (artUrl.startsWith('assets/')) {
+        return Uri.parse('asset:///$artUrl');
+      } else {
+        return Uri.parse('asset:///assets/$artUrl');
+      }
+    }
+    
+    // Если это http/https URL
+    if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
+      return Uri.parse(artUrl);
+    }
+    
+    // По умолчанию возвращаем null
+    return null;
   }
 
   void updatePlaybackState(bool isPlaying) {
@@ -326,12 +357,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _updateMediaItem() {
+    // ✅ ИСПРАВЛЕНИЕ: Используем дефолтную обложку из сервиса
+    final defaultCoverUrl = audioPlayerService.getDefaultCoverUrlForBackground();
+    
     _currentMediaItem = MediaItem(
       id: 'jrr_live_stream',
       title: 'J-Rock Radio',
       artist: 'Live Stream',
       album: 'Онлайн радио',
-      artUri: Uri.parse('https://jrradio.ru/images/logo512.png'),
+      artUri: _parseArtUri(defaultCoverUrl), // ✅ Используем ту же дефолтную обложку
       extras: {'isRadio': true},
     );
     mediaItem.add(_currentMediaItem);

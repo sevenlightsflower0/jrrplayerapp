@@ -14,7 +14,8 @@ import 'package:jrrplayerapp/services/audio_player_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class AudioMetadata {
-  static const String defaultCoverUrl = 'images/default_cover.png';
+   // ✅ ИСПРАВЛЕНИЕ: Используем тот же путь, что и в основном приложении
+  static const String defaultCoverUrl = 'assets/images/default_cover.png';
 
   final String title;
   final String artist;
@@ -1471,5 +1472,11 @@ class AudioPlayerService with ChangeNotifier {
     super.dispose();
 
     debugPrint('AudioPlayerService disposed');
+  }
+
+  /// Возвращает URL дефолтной обложки для использования в фоновом режиме
+  String getDefaultCoverUrlForBackground() {
+    // Используем тот же путь, что и в _buildDefaultCover
+    return 'assets/images/default_cover.png';
   }
 }
