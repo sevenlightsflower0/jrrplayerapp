@@ -190,6 +190,11 @@ class AudioPlayerService with ChangeNotifier {
     notifyListeners();
   }
 
+  void notifyListenersSafe() {
+    if (_isDisposed) return;
+    notifyListeners();
+  }
+
   bool? get hasNetworkConnection {
     return _connectivityResult != ConnectivityResult.none;
   }
@@ -1187,6 +1192,23 @@ class AudioPlayerService with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error playing previous podcast: $e');
+    }
+  }
+
+  Future<void> syncWithBackgroundHandler(bool isPlaying) async {
+    if (_isDisposed) return;
+    
+    debugPrint('🎵 Syncing with background handler: $isPlaying');
+    
+    // Обновляем состояние сервиса
+    _forceNotifyPlaybackState(isPlaying);
+    
+    // Уведомляем UI
+    notifyListeners();
+    
+    // Синхронизируем с handler если он существует
+    if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+      (_audioHandler as AudioPlayerHandler).forceUpdateUI(isPlaying);
     }
   }
 

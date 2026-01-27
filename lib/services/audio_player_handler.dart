@@ -1,5 +1,5 @@
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/widgets.dart'; // ADDED: Import for WidgetsBinding
+import 'package:flutter/widgets.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
 import 'package:just_audio/just_audio.dart';
@@ -9,23 +9,59 @@ class AudioPlayerHandler extends BaseAudioHandler {
   MediaItem? _currentMediaItem;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
-  StreamSubscription<bool>? _playingSubscription; // NEW: Listener for playing state
-  StreamSubscription<ProcessingState>? _processingSubscription; // NEW: Listener for processing state
+  StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<ProcessingState>? _processingSubscription;
   bool _isHandlingControl = false;
+  Timer? _commandTimeoutTimer;
 
   AudioPlayerHandler(this.audioPlayerService) {
-    // Инициализируем начальное состояние
     _updateMediaItem();
-    
-    // Слушаем изменения состояния из AudioPlayerService
     audioPlayerService.addListener(_onAudioServiceUpdate);
+    _setupStreams();
+  }
+
+  void _resetCommandLock() {
+    if (_isHandlingControl) {
+      debugPrint('🔄 Resetting command lock (timeout or error)');
+      _isHandlingControl = false;
+    }
+    _commandTimeoutTimer?.cancel();
+    _commandTimeoutTimer = null;
+  }
+
+  Future<void> _executeCommand(Future<void> Function() command, String commandName) async {
+    if (_isHandlingControl) {
+      debugPrint('⚠️ Command $commandName: previous command still executing, resetting lock');
+      _resetCommandLock();
+    }
+
+    _isHandlingControl = true;
     
-    // Подписываемся на потоки позиции и длительности
-    _setupStreams(); // CHANGED: Combined setup
+    _commandTimeoutTimer = Timer(const Duration(seconds: 5), () {
+      debugPrint('⏰ Command $commandName timeout - resetting lock');
+      _resetCommandLock();
+    });
+    
+    try {
+      debugPrint('🎵 Background: Executing $commandName');
+      await command();
+      debugPrint('✅ Background: $commandName completed successfully');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error in background $commandName: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      final player = audioPlayerService.getPlayer();
+      if (player != null) {
+        updatePlaybackState(player.playing);
+      }
+      
+      rethrow;
+    } finally {
+      _resetCommandLock();
+    }
   }
 
   void _setupStreams() {
-    // Отписываемся от старых подписок если есть
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _playingSubscription?.cancel();
@@ -41,16 +77,28 @@ class AudioPlayerHandler extends BaseAudioHandler {
         _updatePlaybackDuration(duration);
       });
       
-      // Слушаем изменения состояния playing
       _playingSubscription = player.playingStream.listen((isPlaying) {
         debugPrint('Background: playingStream changed to $isPlaying');
-        updatePlaybackState(isPlaying); // CHANGED: Removed delay for faster sync
+        
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!audioPlayerService.isDisposed) {
+            updatePlaybackState(isPlaying);
+            // ✅ ИСПРАВЛЕНО: Используем публичный метод
+            audioPlayerService.notifyListenersSafe();
+          }
+        });
       });
       
-      // Слушаем изменения состояния обработки
       _processingSubscription = player.processingStateStream.listen((state) {
         debugPrint('Background: processingState changed to $state');
-        updatePlaybackState(player.playing); // CHANGED: Removed delay for faster sync
+        
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!audioPlayerService.isDisposed) {
+            updatePlaybackState(player.playing);
+            // ✅ ИСПРАВЛЕНО: Используем публичный метод
+            audioPlayerService.notifyListenersSafe();
+          }
+        });
       });
     }
   }
@@ -70,49 +118,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  List<MediaControl> get _controls => const [
-    MediaControl(
-      androidIcon: 'drawable/ic_skip_previous',
-      label: 'Предыдущий',
-      action: MediaAction.skipToPrevious,
-    ),
-    MediaControl(
-      androidIcon: 'drawable/ic_rewind_30s',
-      label: '30 секунд назад',
-      action: MediaAction.rewind,
-    ),
-    MediaControl(
-      androidIcon: 'drawable/ic_play',
-      label: 'Воспроизвести',
-      action: MediaAction.play,
-    ),
-    MediaControl(
-      androidIcon: 'drawable/ic_pause',
-      label: 'Пауза',
-      action: MediaAction.pause,
-    ),
-    MediaControl(
-      androidIcon: 'drawable/ic_fast_forward_30s',
-      label: '30 секунд вперед',
-      action: MediaAction.fastForward,
-    ),
-    MediaControl(
-      androidIcon: 'drawable/ic_skip_next',
-      label: 'Следующий',
-      action: MediaAction.skipToNext,
-    ),
-    MediaControl(
-      androidIcon: 'drawable/ic_stop',
-      label: 'Стоп',
-      action: MediaAction.stop,
-    ),
-  ];
-
   void _updateControls() {
     final currentState = playbackState.value;
     final isPlaying = currentState.playing;
     
-    // Создаем динамические контролы как в updatePlaybackState
     final List<MediaControl> dynamicControls = [
       const MediaControl(
         androidIcon: 'drawable/ic_skip_previous',
@@ -167,13 +176,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
     
     if (player != null) {
-      updatePlaybackState(player.playing);
-      _setupStreams(); // Переподписываемся на потоки
+      final actualPlayingState = audioPlayerService.isPlaying;
+      updatePlaybackState(actualPlayingState);
+      _setupStreams();
     }
   }
 
   void updateMetadata(AudioMetadata metadata) {
-    // Для подкастов добавляем длительность в MediaItem
     Duration? duration;
     if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
       duration = audioPlayerService.currentEpisode?.duration;
@@ -219,7 +228,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final position = player?.position ?? Duration.zero;
     final duration = player?.duration;
     
-    // Создаем список доступных действий
     List<MediaAction> actions = [
       MediaAction.seek,
       MediaAction.seekForward,
@@ -233,14 +241,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
       MediaAction.fastForward,
     ];
     
-    // Для радио отключаем некоторые элементы управления
     if (!audioPlayerService.isPodcastMode) {
       actions.remove(MediaAction.seek);
       actions.remove(MediaAction.skipToNext);
       actions.remove(MediaAction.skipToPrevious);
     }
 
-    // Динамические controls: заменяем play/pause в зависимости от isPlaying
     final List<MediaControl> dynamicControls = [
       const MediaControl(
         androidIcon: 'drawable/ic_skip_previous',
@@ -252,13 +258,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
         label: '30 секунд назад',
         action: MediaAction.rewind,
       ),
-      if (!isPlaying)  // Только play, если не играет
+      if (!isPlaying)
         const MediaControl(
           androidIcon: 'drawable/ic_play',
           label: 'Воспроизвести',
           action: MediaAction.play,
         ),
-      if (isPlaying)  // Только pause, если играет
+      if (isPlaying)
         const MediaControl(
           androidIcon: 'drawable/ic_pause',
           label: 'Пауза',
@@ -281,12 +287,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
       ),
     ];
 
-    // Обновите compact indices динамически
     final List<int> compactIndices = isPlaying 
-        ? [0, 3, 6]  // prev, pause, stop (индексы в dynamicControls)
+        ? [0, 3, 6]  // prev, pause, stop
         : [0, 2, 6]; // prev, play, stop  
     
-    // CHANGED: Map just_audio ProcessingState to audio_service AudioProcessingState
     AudioProcessingState processingState = AudioProcessingState.idle;
     if (player != null) {
       switch (player.processingState) {
@@ -331,19 +335,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
       extras: {'isRadio': true},
     );
     mediaItem.add(_currentMediaItem);
-    
-    // Обновляем состояние с правильными контролами
-    updatePlaybackState(false); // По умолчанию не играет
+    updatePlaybackState(false);
   }
 
   @override
   Future<void> play() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('🎵 Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-    try {
-      // Гарантируем инициализацию сервиса
+    return _executeCommand(() async {
+      debugPrint('🎵 Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+      
       if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
         debugPrint('🎵 Background audio: service not initialized, initializing...');
         await audioPlayerService.initialize();
@@ -359,81 +358,45 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('🎵 Background play: isRadioStopped = ${audioPlayerService.isRadioStopped}');
       
       if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        // Подкаст
         debugPrint('🎵 Background: Playing podcast');
-        final player = audioPlayerService.getPlayer();
         if (player != null && !player.playing) {
           await player.play();
           debugPrint('🎵 Podcast resumed from background');
         }
       } else {
         debugPrint('🎵 Background: Handling radio play');
-         // Радио - унифицированная логика
-        if (audioPlayerService.isRadioPaused) {
-          await audioPlayerService.resumeRadioFromPause();
-        } else if (audioPlayerService.isRadioStopped || 
-                  player?.processingState == ProcessingState.idle) {
-          await audioPlayerService.playRadio();
-        } else {
-          await audioPlayerService.playRadio();
-        }
+        await audioPlayerService.playRadio();
       }
       
-      // ✅ ИСПРАВЛЕНИЕ: Обновляем состояние СРАЗУ без задержки
       final newPlayingState = audioPlayerService.isPlaying;
       debugPrint('🎵 Background: Updating playback state to $newPlayingState');
       updatePlaybackState(newPlayingState);
       
-    } catch (e, stackTrace) {
-      debugPrint('🎵 Error in background play: $e');
-      debugPrint('Stack trace: $stackTrace');
-      updatePlaybackState(false);
-    } finally {
-      _isHandlingControl = false;
-    }
+    }, 'play');
   }
 
   @override
   Future<void> pause() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('🎵 Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-    try {
+    return _executeCommand(() async {
+      debugPrint('🎵 Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+      
       final player = audioPlayerService.getPlayer();
       final wasPlaying = player?.playing ?? false;
       
       debugPrint('🎵 Background pause: player was playing = $wasPlaying');
       
       if (wasPlaying) {
-        // ✅ ИЗМЕНЕНИЕ: В заблокированном режиме всегда используем stop для радио
-        // Для подкаста - pause(), для радио - stopRadio()
-        if (audioPlayerService.isPodcastMode) {
-          await audioPlayerService.pause();
-          debugPrint('🎵 Background pause: podcast paused');
-        } else {
-          // В заблокированном режиме радио полностью останавливается
-          await audioPlayerService.pauseRadio();
-          debugPrint('🎵 Background pause: radio paused (lock screen behavior)');
-        }
-        
-        debugPrint('🎵 Background pause: audio handled successfully');
+        await audioPlayerService.pause();
+        debugPrint('🎵 Background pause: audio paused successfully');
       } else {
         debugPrint('🎵 Background pause: player was already paused/stopped');
       }
-      // ✅ ИСПРАВЛЕНИЕ: Обновляем состояние СРАЗУ
+      
       updatePlaybackState(false);
       
-    } catch (e, stackTrace) {
-      debugPrint('🎵 Error in background pause: $e');
-      debugPrint('Stack trace: $stackTrace');
-      updatePlaybackState(false);
-    } finally {
-      _isHandlingControl = false;
-    }
+    }, 'pause');
   }
     
-  // Новый метод для принудительного обновления UI
   void forceUpdateUI(bool isPlaying) {
     updatePlaybackState(isPlaying);
     _updateControls();
@@ -441,90 +404,62 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   @override
   Future<void> stop() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: stop called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-    try {
-      // Для радио и подкаста останавливаем через сервис
+    return _executeCommand(() async {
+      debugPrint('Background audio: stop called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
+      
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.stopPodcast();
       } else {
-        // Для радио останавливаем полностью
         await audioPlayerService.stopRadio();
       }
-      // Обновляем состояние в UI
+      
       updatePlaybackState(false);
-      // Дополнительная синхронизация
       _onAudioServiceUpdate();
-    } catch (e) {
-      debugPrint('Error in background stop: $e');
-    } finally {
-      _isHandlingControl = false;
-    }
+      
+    }, 'stop');
   }
 
   @override
   Future<void> seek(Duration position) async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: seek to $position');
-    try {
+    return _executeCommand(() async {
+      debugPrint('Background audio: seek to $position');
+      
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.seekPodcast(position);
       }
-    } catch (e) {
-      debugPrint('Error in background seek: $e');
-    } finally {
-      _isHandlingControl = false;
-      // REMOVED: Delayed update
-    }
+      
+    }, 'seek');
   }
 
   @override
   Future<void> skipToNext() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: skipToNext');
-    try {
+    return _executeCommand(() async {
+      debugPrint('Background audio: skipToNext');
+      
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.playNextPodcast();
       }
-    } catch (e) {
-      debugPrint('Error in background skipToNext: $e');
-    } finally {
-      _isHandlingControl = false;
-      // REMOVED: Delayed update
-    }
+      
+    }, 'skipToNext');
   }
 
   @override
   Future<void> skipToPrevious() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: skipToPrevious');
-    try {
+    return _executeCommand(() async {
+      debugPrint('Background audio: skipToPrevious');
+      
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.playPreviousPodcast();
       }
-    } catch (e) {
-      debugPrint('Error in background skipToPrevious: $e');
-    } finally {
-      _isHandlingControl = false;
-      // REMOVED: Delayed update
-    }
+      
+    }, 'skipToPrevious');
   }
 
   @override
   Future<void> rewind() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: rewind');
-    try {
+    return _executeCommand(() async {
+      debugPrint('Background audio: rewind');
+      
       if (audioPlayerService.isPodcastMode) {
         final player = audioPlayerService.getPlayer();
         final currentPosition = player?.position ?? Duration.zero;
@@ -535,21 +470,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await audioPlayerService.seekPodcast(Duration.zero);
         }
       }
-    } catch (e) {
-      debugPrint('Error in background rewind: $e');
-    } finally {
-      _isHandlingControl = false;
-      // REMOVED: Delayed update
-    }
+      
+    }, 'rewind');
   }
 
   @override
   Future<void> fastForward() async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: fastForward');
-    try {
+    return _executeCommand(() async {
+      debugPrint('Background audio: fastForward');
+      
       if (audioPlayerService.isPodcastMode) {
         final player = audioPlayerService.getPlayer();
         final currentPosition = player?.position ?? Duration.zero;
@@ -561,39 +490,69 @@ class AudioPlayerHandler extends BaseAudioHandler {
           await audioPlayerService.seekPodcast(duration - const Duration(seconds: 1));
         }
       }
-    } catch (e) {
-      debugPrint('Error in background fastForward: $e');
-    } finally {
-      _isHandlingControl = false;
-      // REMOVED: Delayed update
-    }
+      
+    }, 'fastForward');
   }
 
   @override
   Future<void> playMediaItem(MediaItem mediaItem) async {
-    if (_isHandlingControl) return;
-    _isHandlingControl = true;
-    
-    debugPrint('Background audio: playMediaItem ${mediaItem.title}');
-    try {
+    return _executeCommand(() async {
+      debugPrint('Background audio: playMediaItem ${mediaItem.title}');
+      
       this.mediaItem.add(mediaItem);
       playbackState.add(playbackState.value.copyWith(
         playing: true,
         processingState: AudioProcessingState.ready,
-        controls: _controls,
+        controls: const [
+          MediaControl(
+            androidIcon: 'drawable/ic_skip_previous',
+            label: 'Предыдущий',
+            action: MediaAction.skipToPrevious,
+          ),
+          MediaControl(
+            androidIcon: 'drawable/ic_pause',
+            label: 'Пауза',
+            action: MediaAction.pause,
+          ),
+          MediaControl(
+            androidIcon: 'drawable/ic_skip_next',
+            label: 'Следующий',
+            action: MediaAction.skipToNext,
+          ),
+          MediaControl(
+            androidIcon: 'drawable/ic_stop',
+            label: 'Стоп',
+            action: MediaAction.stop,
+          ),
+        ],
       ));
-    } finally {
-      _isHandlingControl = false;
-    }
+      
+    }, 'playMediaItem');
   }
 
   @override
   Future<void> onTaskRemoved() async {
     await super.onTaskRemoved();
+    _cleanupResources();
+  }
+  
+  void _cleanupResources() {
+    _resetCommandLock();
+    _commandTimeoutTimer?.cancel();
+    _commandTimeoutTimer = null;
+    
     audioPlayerService.removeListener(_onAudioServiceUpdate);
+    
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
-    _playingSubscription?.cancel(); // NEW
-    _processingSubscription?.cancel(); // NEW
+    _playingSubscription?.cancel();
+    _processingSubscription?.cancel();
+    
+    _positionSubscription = null;
+    _durationSubscription = null;
+    _playingSubscription = null;
+    _processingSubscription = null;
+    
+    debugPrint('AudioPlayerHandler resources cleaned up');
   }
 }
