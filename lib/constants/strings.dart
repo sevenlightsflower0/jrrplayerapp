@@ -27,6 +27,7 @@ class AppStrings {
   static const List<String> corsProxies = [
     'https://api.allorigins.win/raw?url=',
     'https://corsproxy.io/?',
+    'https://api.codetabs.com/v1/proxy?quest=',
     'https://cors-anywhere.herokuapp.com/'
   ];
   // Deezer API mit mehreren Proxy-Optionen

@@ -22,6 +22,78 @@ const Duration cacheDuration = Duration(hours: 1);
 
 enum ConnectionType { wifi, mobile, offline }
 
+// Быстрый парсер тоже обновим для извлечения изображений (но только самые простые способы)
+List<PodcastEpisode> _parseRssQuickly(String responseBody, {int limit = 20}) {
+  try {
+    final document = xml.XmlDocument.parse(responseBody);
+    
+    // Быстрый поиск items
+    var items = document.findAllElements('item').toList();
+    if (items.isEmpty) {
+      final channel = document.findAllElements('channel').firstOrNull;
+      items = channel?.findElements('item').toList() ?? [];
+    }
+    
+    if (items.isEmpty) return [];
+
+    // Быстрое получение изображения канала
+    String? channelImageUrl;
+    final channel = document.findAllElements('channel').firstOrNull;
+    if (channel != null) {
+      final itunesImage = channel.findElements('itunes:image').firstOrNull;
+      if (itunesImage != null) {
+        channelImageUrl = itunesImage.getAttribute('href')?.trim();
+      }
+    }
+
+    List<PodcastEpisode> podcasts = [];
+    int parsedCount = 0;
+
+    for (var item in items) {
+      if (parsedCount >= limit) break;
+      
+      try {
+        // Только необходимые поля для быстрой загрузки
+        final title = item.findElements('title').firstOrNull?.innerText.trim() ?? 'Без названия';
+        final audioUrl = item.findElements('enclosure').firstOrNull?.getAttribute('url') ?? '';
+        
+        if (audioUrl.isEmpty) continue;
+        
+        final guid = item.findElements('guid').firstOrNull?.innerText.trim() ?? '${parsedCount}_${DateTime.now().millisecondsSinceEpoch}';
+        
+        // Быстрое извлечение изображения (только itunes:image)
+        String? episodeImageUrl;
+        final itunesImage = item.findElements('itunes:image').firstOrNull;
+        if (itunesImage != null) {
+          episodeImageUrl = itunesImage.getAttribute('href')?.trim();
+        }
+        
+        podcasts.add(PodcastEpisode(
+          id: guid,
+          title: title,
+          audioUrl: audioUrl,
+          imageUrl: episodeImageUrl, // Добавляем изображение
+          channelImageUrl: channelImageUrl, // Изображение канала
+          description: '', // Пропускаем для скорости
+          duration: Duration.zero,
+          publishedDate: DateTime.now(),
+          channelId: 'jrr_podcast_channel',
+          channelTitle: 'J-Rock Radio Podcasts',
+        ));
+        
+        parsedCount++;
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return podcasts;
+  } catch (e) {
+    debugPrint('Quick parse error: $e');
+    return [];
+  }
+}
+
 // Полный парсер для качественной загрузки с извлечением изображений
 List<PodcastEpisode> _parseRssFull(String responseBody) {
   try {
@@ -298,7 +370,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
   }
 
   Future<void> _testProxiesInBackground() async {
-    final proxies = AppStrings.corsProxies.take(3);
+    const proxies = AppStrings.corsProxies;
     
     for (final proxy in proxies) {
       if (_failedProxies.contains(proxy)) continue;
@@ -308,18 +380,21 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
         final testUrl = '$proxy${Uri.encodeFull('https://httpbin.org/get')}';
         
         final response = await http.get(Uri.parse(testUrl)).timeout(
-          const Duration(seconds: 3),
+          const Duration(seconds: 5),
         );
         
         if (response.statusCode == 200) {
           final duration = DateTime.now().difference(startTime);
           _proxyResponseTimes[proxy] = duration;
           _failedProxies.remove(proxy);
+          debugPrint('✅ Proxy test passed: $proxy (${duration.inMilliseconds}ms)');
         } else {
           _failedProxies.add(proxy);
+          debugPrint('❌ Proxy test failed (HTTP ${response.statusCode}): $proxy');
         }
       } catch (e) {
         _failedProxies.add(proxy);
+        debugPrint('❌ Proxy test error: $e');
       }
     }
   }
@@ -328,7 +403,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     const originalUrl = AppStrings.podcastRssOriginalUrl;
     const proxies = AppStrings.corsProxies;
     
-    // Используем самый быстрый рабочий прокси
+    // Если есть рабочие прокси, выбираем самый быстрый
     if (_proxyResponseTimes.isNotEmpty) {
       final workingProxies = _proxyResponseTimes.entries
         .where((entry) => !_failedProxies.contains(entry.key))
@@ -337,6 +412,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
       if (workingProxies.isNotEmpty) {
         workingProxies.sort((a, b) => a.value.compareTo(b.value));
         final fastest = workingProxies.first.key;
+        debugPrint('🎵 Using fastest proxy: $fastest');
         return '$fastest${Uri.encodeFull(originalUrl)}';
       }
     }
@@ -344,39 +420,89 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     // Ищем первый рабочий прокси
     for (final proxy in proxies) {
       if (!_failedProxies.contains(proxy)) {
-        return '$proxy${Uri.encodeFull(originalUrl)}';
+        // Проверяем прокси перед использованием
+        final testUrl = '$proxy${Uri.encodeFull('https://httpbin.org/get')}';
+        try {
+          debugPrint('🎵 Testing proxy: $proxy');
+          final response = await http.get(Uri.parse(testUrl)).timeout(
+            const Duration(seconds: 5),
+          );
+          if (response.statusCode == 200) {
+            _failedProxies.remove(proxy);
+            debugPrint('🎵 Proxy test successful: $proxy');
+            return '$proxy${Uri.encodeFull(originalUrl)}';
+          } else {
+            debugPrint('🎵 Proxy test failed (status ${response.statusCode}): $proxy');
+            _failedProxies.add(proxy);
+          }
+        } catch (e) {
+          debugPrint('🎵 Proxy test error: $e');
+          _failedProxies.add(proxy);
+        }
       }
     }
     
-    // Возвращаем первый, даже если провален
+    // Если все прокси не сработали, пробуем первый (на случай, если проверка была ложной)
+    debugPrint('🎵 All proxies failed, trying first one: ${proxies.first}');
     return '${proxies.first}${Uri.encodeFull(originalUrl)}';
   }
 
   Future<void> _loadPodcasts() async {
     if (_isDownloading) return;
+
+    // Проверяем соединение
+    if (_connectionType == ConnectionType.offline) {
+      _updateStatus('Нет подключения к интернету');
+      await _loadFromCache();
+      return;
+    }
     
     _isDownloading = true;
     _startStatusUpdates();
     
     try {
-      switch (_connectionType) {
-        case ConnectionType.wifi:
-          await _loadWithWiFi();
-          break;
-        case ConnectionType.mobile:
-          await _loadWithMobile();
-          break;
-        case ConnectionType.offline:
-          await _loadFromCache();
-          break;
+      // Пробуем загрузить 3 раза с разными стратегиями
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          _updateStatus('Попытка загрузки $attempt из 3...');
+          
+          switch (_connectionType) {
+            case ConnectionType.wifi:
+              await _loadWithWiFi();
+              break;
+            case ConnectionType.mobile:
+              await _loadWithMobile();
+              break;
+            case ConnectionType.offline:
+              await _loadFromCache();
+              break;
+          }
+          
+          // Если загрузка успешна, выходим из цикла
+          if (podcasts.isNotEmpty || !isLoading) {
+            break;
+          }
+          
+          // Если не удалось, ждем перед следующей попыткой
+          if (attempt < 3) {
+            await Future.delayed(Duration(seconds: attempt * 2));
+          }
+        } catch (e) {
+          debugPrint('Load attempt $attempt failed: $e');
+          if (attempt == 3) {
+            rethrow; // Пробрасываем ошибку после последней попытки
+          }
+        }
       }
     } catch (e) {
       debugPrint('Load podcasts error: $e');
       
       if (mounted) {
         setState(() {
-          errorMessage = 'Ошибка загрузки: ${e.toString()}';
-          isLoading = false;
+          errorMessage = _connectionType == ConnectionType.offline
+                    ? 'Нет подключения к интернету'
+                    : 'Ошибка загрузки: ${e.toString()}';
+        isLoading = false;
         });
       }
     } finally {
@@ -393,15 +519,98 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
       await _loadFromCache(showOnlyIfValid: true);
     }
     
-    // Загружаем полную версию
-    await _fetchFullPodcasts();
+    // Пробуем загрузить полную версию
+    try {
+      await _fetchFullPodcasts();
+    } catch (e) {
+      // Если не удалось, используем кэш
+      if (podcasts.isEmpty) {
+        await _loadFromCache();
+      }
+    }
   }
 
   Future<void> _loadWithMobile() async {
     _updateStatus('Оптимизированная загрузка...');
     
-    // Просто загружаем полные данные (но отображаем только 10)
-    await _fetchFullPodcasts();
+    // 1. Сначала пробуем кэш
+    if (podcasts.isEmpty) {
+      await _loadFromCache(showOnlyIfValid: true);
+    }
+    
+    // 2. Пробуем быструю загрузку
+    try {
+      await _loadQuickPodcasts();
+    } catch (e) {
+      debugPrint('Quick load failed: $e');
+    }
+    
+    // 3. Если ничего не загрузилось, пробуем полную загрузку
+    if (podcasts.isEmpty) {
+      try {
+        await _fetchFullPodcasts();
+      } catch (e) {
+        debugPrint('Full load also failed: $e');
+        // Пробуем кэш как последнее средство
+        await _loadFromCache();
+      }
+    }
+  }
+
+  Future<void> _loadQuickPodcasts() async {
+    try {
+      _updateStatus('Загрузка быстрого доступа...');
+      
+      final proxyUrl = await _getBestProxyUrl();
+      final client = http.Client();
+      
+      final response = await client.send(
+        http.Request('GET', Uri.parse(proxyUrl))
+          ..headers['Accept-Encoding'] = 'gzip'
+          ..headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      ).timeout(const Duration(seconds: 20));
+      
+      if (response.statusCode == 200) {
+        // Читаем только первые 50KB
+        final bytes = await _readStreamBytes(response.stream, limit: 50000);
+        final responseBody = utf8.decode(bytes);
+        
+        // Быстрый парсинг
+        List<PodcastEpisode> quickPodcasts;
+        if (kIsWeb) {
+          // ВЫЗЫВАЕМ ФУНКЦИЮ ВЕРХНЕГО УРОВНЯ (без this.)
+          quickPodcasts = _parseRssQuickly(responseBody, limit: 10);
+        } else {
+          quickPodcasts = await compute(
+            (body) => _parseRssQuickly(body, limit: 10),
+            responseBody
+          );
+        }
+        
+        if (quickPodcasts.isNotEmpty && mounted) {
+          final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
+          podcastRepo.setEpisodes(quickPodcasts);
+          
+          setState(() {
+            podcasts = quickPodcasts.take(pageSize).toList();
+            isLoading = false;
+            hasMore = quickPodcasts.length > pageSize;
+            errorMessage = '';
+          });
+          
+          await _saveToCache(responseBody);
+        } else {
+          throw Exception('Быстрый парсинг не дал результатов');
+        }
+      } else {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      
+      client.close();
+    } catch (e) {
+      debugPrint('Quick load error: $e');
+      rethrow;
+    }
   }
 
   Future<List<int>> _readStreamBytes(Stream<List<int>> stream, {int? limit}) async {
@@ -416,63 +625,71 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
   }
 
   Future<void> _fetchFullPodcasts() async {
-    try {
-      _updateStatus('Загрузка подкастов...');
-      
-      final proxyUrl = await _getBestProxyUrl();
-      final client = http.Client();
-      
-      final response = await client.send(
-        http.Request('GET', Uri.parse(proxyUrl))
-          ..headers['Accept-Encoding'] = 'gzip'
-          ..headers['Connection'] = 'keep-alive'
-      ).timeout(_connectionType == ConnectionType.mobile 
-          ? const Duration(seconds: 20) 
-          : const Duration(seconds: 30));
-      
-      if (response.statusCode == 200) {
-        final bytes = await _readStreamBytes(response.stream);
-        final responseBody = utf8.decode(bytes);
+      try {
+        _updateStatus('Загрузка подкастов...');
         
-        // Сохраняем весь RSS в кэш
-        await _saveToCache(responseBody);
+        final proxyUrl = await _getBestProxyUrl();
+        final client = http.Client();
         
-        // Парсим все подкасты для репозитория, но в состояние добавляем только первые 10
-        List<PodcastEpisode> fullPodcasts;
-        if (kIsWeb) {
-          fullPodcasts = _parseRssFull(responseBody);
+        // Увеличиваем таймауты для медленных соединений
+        final timeoutDuration = _connectionType == ConnectionType.mobile 
+            ? const Duration(seconds: 40) 
+            : const Duration(seconds: 60);
+        
+        final response = await client.send(
+          http.Request('GET', Uri.parse(proxyUrl))
+            ..headers['Accept-Encoding'] = 'gzip'
+            ..headers['Connection'] = 'keep-alive'
+            ..headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        ).timeout(timeoutDuration, onTimeout: () {
+          throw TimeoutException('Сервер не отвечает', timeoutDuration);
+        });
+        
+        if (response.statusCode == 200) {
+          final bytes = await _readStreamBytes(response.stream);
+          final responseBody = utf8.decode(bytes);
+          
+          // Сохраняем в кэш
+          await _saveToCache(responseBody);
+          
+          // Парсим полную версию
+          List<PodcastEpisode> fullPodcasts;
+          if (kIsWeb) {
+            fullPodcasts = _parseRssFull(responseBody);
+          } else {
+            fullPodcasts = await compute(_parseRssFull, responseBody)
+              .timeout(const Duration(seconds: 10), onTimeout: () => []);
+          }
+          
+          if (fullPodcasts.isNotEmpty && mounted) {
+            final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
+            podcastRepo.setEpisodes(fullPodcasts);
+            
+            fullPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
+            final initialPodcasts = fullPodcasts.take(pageSize).toList();
+            
+            setState(() {
+              podcasts = initialPodcasts;
+              isLoading = false;
+              hasMore = fullPodcasts.length > pageSize;
+              errorMessage = '';
+            });
+          } else {
+            // Если парсинг не удался, пробуем загрузить из кэша
+            await _loadFromCache();
+          }
         } else {
-          fullPodcasts = await compute(_parseRssFull, responseBody)
-            .timeout(const Duration(seconds: 5), onTimeout: () => []);
+          // Если статус не 200, пробуем загрузить из кэша
+          await _loadFromCache();
         }
         
-        if (fullPodcasts.isNotEmpty && mounted) {
-          final podcastRepo = Provider.of<PodcastRepository>(context, listen: false);
-          podcastRepo.setEpisodes(fullPodcasts);
-          
-          fullPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
-          
-          // ВАЖНОЕ ИЗМЕНЕНИЕ: Берем только первые 10 для начального отображения
-          final initialPodcasts = fullPodcasts.take(pageSize).toList();
-          
-          setState(() {
-            podcasts = initialPodcasts;
-            isLoading = false;
-            hasMore = fullPodcasts.length > pageSize; // Устанавливаем флаг, есть ли еще
-            errorMessage = '';
-          });
-        }
-      }
-      
-      client.close();
-    } catch (e) {
-      debugPrint('Full fetch error: $e');
-      if (podcasts.isEmpty) {
+        client.close();
+      } catch (e) {
+        debugPrint('Full fetch error: $e');
+        // Пробуем загрузить из кэша в случае любой ошибки
         await _loadFromCache();
       }
     }
-  }
-
 
   Future<void> _loadFromCache({bool showOnlyIfValid = false}) async {
     try {
@@ -484,7 +701,10 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
         final cacheDateTime = DateTime.parse(cacheTime);
         final now = DateTime.now();
         
-        if (!showOnlyIfValid || now.difference(cacheDateTime) < cacheDuration) {
+        // Разрешаем использовать кэш старше 24 часов, если showOnlyIfValid = false
+        final maxCacheAge = showOnlyIfValid ? cacheDuration : const Duration(days: 1);
+        
+        if (!showOnlyIfValid || now.difference(cacheDateTime) < maxCacheAge) {
           _updateStatus('Загрузка из кэша...');
           
           List<PodcastEpisode> cachedPodcasts;
@@ -500,14 +720,12 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
             podcastRepo.setEpisodes(cachedPodcasts);
             
             cachedPodcasts.sort((a, b) => b.publishedDate.compareTo(a.publishedDate));
-            
-            // ВАЖНОЕ ИЗМЕНЕНИЕ: Берем только первые 10 для начального отображения
             final initialPodcasts = cachedPodcasts.take(pageSize).toList();
             
             setState(() {
               podcasts = initialPodcasts;
               isLoading = false;
-              hasMore = cachedPodcasts.length > pageSize; // Устанавливаем флаг
+              hasMore = cachedPodcasts.length > pageSize;
               errorMessage = showOnlyIfValid ? '' : 'Используются кэшированные данные';
             });
             
@@ -516,6 +734,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
         }
       }
       
+      // Если кэша нет или он невалидный
       if (!showOnlyIfValid && mounted) {
         setState(() {
           errorMessage = 'Нет кэшированных данных';
