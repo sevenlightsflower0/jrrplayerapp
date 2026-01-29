@@ -1042,6 +1042,97 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
 
+  Future<void> playPodcastFromPosition(PodcastEpisode episode, Duration position) async {
+    debugPrint('playPodcastFromPosition called: ${episode.title} at ${position.inSeconds}s');
+
+    if (!_isInitialized || _isDisposed || _player == null) {
+      await initialize();
+    }
+
+    // Останавливаем таймер метаданных для Web
+    if (kIsWeb) {
+      _stopWebMetadataPolling();
+    }
+
+    // Сбрасываем последний трек для Web
+    _lastWebTrackId = null;
+
+    // Сохраняем позицию текущего эпизода, если он отличается
+    if (_currentEpisode != null && _currentEpisode!.id != episode.id) {
+      await _saveCurrentPosition();
+    }
+
+    _isPodcastMode = true;
+    _currentEpisode = episode;
+
+    try {
+      // Создаём MediaItem для подкаста
+      final artUrl = episode.imageUrl ?? episode.channelImageUrl;
+      final mediaItem = MediaItem(
+        id: episode.id,
+        title: episode.title,
+        artist: 'J-Rock Radio',
+        album: 'Подкасты',
+        artUri: artUrl != null && artUrl.isNotEmpty ? Uri.parse(artUrl) : null,
+        duration: episode.duration,
+      );
+
+      // Создаём AudioMetadata для внутреннего использования
+      final podcastMetadata = AudioMetadata(
+        title: episode.title,
+        artist: 'J-Rock Radio',
+        album: 'Подкаст J-Rock',
+        artUrl: artUrl,
+      );
+
+      // Обновляем внутреннее состояние
+      _currentMetadata = podcastMetadata;
+
+      // Обновляем метаданные в background audio
+      _updateBackgroundAudioMetadata(podcastMetadata);
+
+      _notifyListeners();
+
+      // Останавливаем текущее воспроизведение
+      await _player?.stop();
+
+      // Создаем источник аудио с тегом MediaItem
+      final audioSource = AudioSource.uri(
+        Uri.parse(episode.audioUrl),
+        tag: mediaItem,
+      );
+
+      // Устанавливаем источник
+      await _player?.setAudioSource(audioSource);
+
+      // Перематываем на сохраненную позицию
+      if (position > Duration.zero) {
+        await _player?.seek(position);
+      }
+
+      // Начинаем воспроизведение
+      await _player?.play();
+
+      // Обновляем background audio
+      if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+        (_audioHandler as AudioPlayerHandler).updateMetadata(podcastMetadata);
+        (_audioHandler as AudioPlayerHandler).updatePlaybackState(true);
+      }
+
+      _playbackStateController.add(true);
+      _notifyListeners();
+
+      debugPrint('Podcast playback started from position: ${episode.title} at ${position.inSeconds}s');
+
+    } catch (e, stackTrace) {
+      debugPrint('Error playing podcast from position: $e');
+      debugPrint('Stack trace: $stackTrace');
+      _isBuffering = false;
+      _notifyListeners();
+      rethrow;
+    }
+  }
+
   Future<void> playPodcast(PodcastEpisode episode) async {
     debugPrint('playPodcast called: ${episode.title}');
 

@@ -149,17 +149,25 @@ class PodcastRepository with ChangeNotifier {
 
   final Map<String, Duration> _positions = {}; // Добавьте это поле
 
-  // Метод для получения позиции эпизода
-  Duration? getEpisodePosition(String episodeId) {
-    return _positions[episodeId];
+  // Метод для проверки, есть ли сохраненная позиция для эпизода
+  bool hasEpisodePosition(String episodeId) {
+    return _positions.containsKey(episodeId) && _positions[episodeId]! > Duration.zero;
+  }
+
+  // Метод для получения позиции эпизода (возвращает 0 только если нет сохраненной позиции)
+  Duration getEpisodePosition(String episodeId) {
+    return _positions[episodeId] ?? Duration.zero;
   }
 
   // Метод для обновления позиции эпизода
   void updateEpisodePosition(String episodeId, Duration position) {
-    _positions[episodeId] = position;
-    // Сохраняем в хранилище
-    _savePositionsToStorage();
-    notifyListeners();
+    // Сохраняем позицию только если она больше 1 секунды
+    // чтобы не сохранять случайные короткие позиции
+    if (position.inSeconds > 1) {
+      _positions[episodeId] = position;
+      _savePositionsToStorage();
+      notifyListeners();
+    }
   }
 
   // Метод для сохранения позиций в хранилище

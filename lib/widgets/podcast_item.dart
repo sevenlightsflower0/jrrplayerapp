@@ -46,7 +46,7 @@ class _PodcastItemState extends State<PodcastItem> {
   Future<void> _loadSavedPosition() async {
     // Загружаем сохраненную позицию из репозитория
     final savedPosition = _podcastRepo.getEpisodePosition(widget.podcast.id);
-    if (savedPosition != null && mounted) {
+    if (mounted) {
       setState(() {
         _currentPosition = savedPosition;
         // Вычисляем значение для слайдера
@@ -55,13 +55,19 @@ class _PodcastItemState extends State<PodcastItem> {
           _sliderValue = savedPosition.inMilliseconds / actualDuration.inMilliseconds;
         }
       });
+    } else {
+      // Если позиции нет, начинаем с 0
+      setState(() {
+        _currentPosition = Duration.zero;
+        _sliderValue = 0.0;
+      });
     }
   }
 
   void _onPodcastRepoUpdate() {
     // Обновляем позицию, если она изменилась в репозитории
     final savedPosition = _podcastRepo.getEpisodePosition(widget.podcast.id);
-    if (savedPosition != null && savedPosition != _currentPosition && !_isSeeking) {
+    if (savedPosition != _currentPosition && !_isSeeking) {
       setState(() {
         _currentPosition = savedPosition;
         // Вычисляем значение для слайдера
@@ -84,6 +90,9 @@ class _PodcastItemState extends State<PodcastItem> {
           _cachedDuration = currentDuration;
         });
       }
+      
+      // Если этот подкаст сейчас играет, обновляем позицию из потока
+      // но НЕ сбрасываем ее если она уже была установлена
     }
   }
 
@@ -135,7 +144,16 @@ class _PodcastItemState extends State<PodcastItem> {
     });
 
     try {
-      await audioService.togglePodcastPlayback(widget.podcast);
+      // Проверяем, играет ли сейчас этот подкаст
+      final isCurrentPodcastPlaying = _isPodcastPlaying(audioService);
+      
+      if (isCurrentPodcastPlaying) {
+        // Если уже играет - ставим на паузу
+        await audioService.pause();
+      } else {
+        // Если не играет - начинаем воспроизведение с сохраненной позиции
+        await audioService.playPodcastFromPosition(widget.podcast, _currentPosition);
+      }
     } catch (e) {
       if (mounted) {
         _showErrorSnackBar('Ошибка воспроизведения: $e');
@@ -147,6 +165,25 @@ class _PodcastItemState extends State<PodcastItem> {
         });
       }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
   }
 
   void _seekPodcast(double value, AudioPlayerService audioService) {
@@ -168,16 +205,8 @@ class _PodcastItemState extends State<PodcastItem> {
     
     // Ищем в аудио
     audioService.seekPodcast(newPosition);
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    
+    debugPrint('🎵 Seeking to: ${newPosition.inSeconds}s');
   }
 
   String _formatDuration(Duration? duration) {
@@ -240,31 +269,31 @@ class _PodcastItemState extends State<PodcastItem> {
     final bool isBuffering = _isPodcastBuffering(audioService);
     final Duration? actualDuration = _getActualDuration();
 
-    // Подписываемся на поток позиции только если этот подкаст играет
-    if (isPlaying && _positionSubscription == null) {
-      _positionSubscription = audioService.positionStream.listen((position) {
-        if (!_isSeeking && mounted) {
-          setState(() {
-            _currentPosition = position;
-            if (actualDuration != null && actualDuration.inMilliseconds > 0) {
-              _sliderValue = position.inMilliseconds / actualDuration.inMilliseconds;
-            }
-          });
-          
-          // Автоматически сохраняем позицию каждые 5 секунд
-          // чтобы не перегружать хранилище
-          if (position.inSeconds % 5 == 0) {
-            _podcastRepo.updateEpisodePosition(widget.podcast.id, position);
+  // Подписываемся на поток позиции только если этот подкаст играет
+  if (isPlaying && _positionSubscription == null) {
+    _positionSubscription = audioService.positionStream.listen((position) {
+      if (!_isSeeking && mounted) {
+        setState(() {
+          _currentPosition = position;
+          if (actualDuration != null && actualDuration.inMilliseconds > 0) {
+            _sliderValue = position.inMilliseconds / actualDuration.inMilliseconds;
           }
+        });
+        
+        // Автоматически сохраняем позицию каждые 5 секунд
+        // чтобы не перегружать хранилище
+        if (position.inSeconds % 5 == 0) {
+          _podcastRepo.updateEpisodePosition(widget.podcast.id, position);
         }
-      });
-    } else if (!isPlaying && _positionSubscription != null) {
-      _positionSubscription?.cancel();
-      _positionSubscription = null;
-      
-      // Сохраняем финальную позицию при остановке воспроизведения
-      _podcastRepo.updateEpisodePosition(widget.podcast.id, _currentPosition);
-    }
+      }
+    });
+  } else if (!isPlaying && _positionSubscription != null) {
+    // Сохраняем финальную позицию при остановке воспроизведения
+    _podcastRepo.updateEpisodePosition(widget.podcast.id, _currentPosition);
+    
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+  }
 
     final progress = actualDuration?.inMilliseconds != null && actualDuration!.inMilliseconds > 0 
         ? _currentPosition.inMilliseconds / actualDuration.inMilliseconds 
