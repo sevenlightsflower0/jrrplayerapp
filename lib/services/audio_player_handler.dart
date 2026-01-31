@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/widgets.dart';
+import 'package:jrrplayerapp/audio/audio_constants.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
 import 'package:just_audio/just_audio.dart';
@@ -229,19 +230,42 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _updateControls();
   }
 
-  // ✅ НОВЫЙ МЕТОД: Парсит URI для обложки в фоновом режиме
+  // Парсит URI для обложки в фоновом режиме
   Uri? _parseArtUri(String artUrl) {
     if (artUrl.isEmpty) {
-      return null;
+      debugPrint('⚠️ ArtUrl is empty, using default cover');
+      return _getDefaultArtUri();
     }
     
-    // Если это локальный asset путь
-    if (artUrl.startsWith('assets/') || artUrl.startsWith('images/')) {
-      // Для фонового режима нужно использовать схему asset
-      if (artUrl.startsWith('assets/')) {
-        return Uri.parse('asset:///$artUrl');
-      } else {
-        return Uri.parse('asset:///assets/$artUrl');
+    // Убираем лишние пробелы и проверяем на "null" строку
+    artUrl = artUrl.trim();
+    if (artUrl == 'null' || artUrl == 'Null' || artUrl == 'NULL') {
+      debugPrint('⚠️ ArtUrl is "null" string, using default cover');
+      return _getDefaultArtUri();
+    }
+    
+    // Расширяем список префиксов для локальных путей
+    final localPrefixes = [
+      'assets/',
+      'images/',
+      'drawable/',
+      'ic_',
+      'img_',
+      'cover',
+      'default'
+    ];
+    
+    for (final prefix in localPrefixes) {
+      if (artUrl.contains(prefix)) {
+        // Для фонового режима нужно использовать схему asset
+        if (artUrl.startsWith('assets/')) {
+          return Uri.parse('asset:///$artUrl');
+        } else if (artUrl.startsWith('images/')) {
+          return Uri.parse('asset:///assets/$artUrl');
+        } else {
+          // Предполагаем, что это asset в папке assets/images/
+          return Uri.parse('asset:///assets/images/$artUrl');
+        }
       }
     }
     
@@ -250,8 +274,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return Uri.parse(artUrl);
     }
     
-    // По умолчанию возвращаем null
-    return null;
+    // Если ничего не подошло - используем дефолтную обложку
+    debugPrint('⚠️ ArtUrl "$artUrl" not recognized, using default cover');
+    return _getDefaultArtUri();
+  }
+
+  Uri _getDefaultArtUri() {
+    // Гарантированный путь к дефолтной обложке
+    return Uri.parse('asset:///assets/images/default_cover.png');
   }
 
   void updatePlaybackState(bool isPlaying) {
@@ -497,7 +527,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       if (audioPlayerService.isPodcastMode) {
         final player = audioPlayerService.getPlayer();
         final currentPosition = player?.position ?? Duration.zero;
-        final newPosition = currentPosition - const Duration(seconds: 15);
+        final newPosition = currentPosition - Duration(seconds: kPodcastRewindInterval.inSeconds);
         if (newPosition > Duration.zero) {
           await audioPlayerService.seekPodcast(newPosition);
         } else {
@@ -517,7 +547,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         final player = audioPlayerService.getPlayer();
         final currentPosition = player?.position ?? Duration.zero;
         final duration = player?.duration ?? const Duration(hours: 1);
-        final newPosition = currentPosition + const Duration(seconds: 30);
+        final newPosition = currentPosition + Duration(seconds: kPodcastFastForwardInterval.inSeconds);
         if (newPosition < duration) {
           await audioPlayerService.seekPodcast(newPosition);
         } else {

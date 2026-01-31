@@ -232,6 +232,8 @@ class AudioPlayerService with ChangeNotifier {
           androidNotificationChannelName: 'J-Rock Radio',
           androidNotificationOngoing: true,
           androidStopForegroundOnPause: false,
+          rewindInterval: const Duration(seconds: 30),
+          fastForwardInterval: const Duration(seconds: 30),
           androidNotificationIcon: 'mipmap/ic_launcher',
           notificationColor: Colors.purple,
           androidShowNotificationBadge: true,
