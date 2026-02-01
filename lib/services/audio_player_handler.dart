@@ -14,6 +14,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
   StreamSubscription<ProcessingState>? _processingSubscription;
   bool _isHandlingControl = false;
   Timer? _commandTimeoutTimer;
+  final Map<String, Uri> _artUriCache = {}; // Кэш для быстрого доступа
+  static const String _defaultArtUriString = 'asset:///assets/images/default_cover.png';
+  static final Uri _defaultArtUri = Uri.parse(_defaultArtUriString);
+
 
   AudioPlayerHandler(this.audioPlayerService) {
     _updateMediaItem();
@@ -182,17 +186,22 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void updateMetadata(AudioMetadata metadata) {
+    debugPrint('🎵 updateMetadata called with artUrl: ${metadata.artUrl}');
+
     Duration? duration;
     if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
       duration = audioPlayerService.currentEpisode?.duration;
     }
     
     // ✅ ИСПРАВЛЕНИЕ: Используем дефолтную обложку из сервиса, если artUrl пустая или дефолтная
-    String artUrl = metadata.artUrl;
+    String artUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
+    debugPrint('🎵 Original artUrl: $artUrl');
+    
     if (artUrl.isEmpty || 
         artUrl == AudioMetadata.defaultCoverUrl || 
         artUrl.contains('default_cover')) {
       artUrl = audioPlayerService.getDefaultCoverUrlForBackground();
+      debugPrint('🎵 Replaced with default: $artUrl');
     }
     
     if (_currentMediaItem == null) {
@@ -232,56 +241,57 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   // Парсит URI для обложки в фоновом режиме
   Uri? _parseArtUri(String artUrl) {
-    if (artUrl.isEmpty) {
-      debugPrint('⚠️ ArtUrl is empty, using default cover');
-      return _getDefaultArtUri();
+    // Самый быстрый вариант - если URL уже правильный
+    if (artUrl == 'asset:///assets/images/default_cover.png') {
+      return _defaultArtUri;
+    }
+
+    // Экстремально быстрые проверки
+    if (artUrl.isEmpty || artUrl.length < 3) {
+      return _defaultArtUri;
     }
     
-    // Убираем лишние пробелы и проверяем на "null" строку
-    artUrl = artUrl.trim();
-    if (artUrl == 'null' || artUrl == 'Null' || artUrl == 'NULL') {
-      debugPrint('⚠️ ArtUrl is "null" string, using default cover');
-      return _getDefaultArtUri();
+    // Кэш
+    if (_artUriCache.containsKey(artUrl)) {
+      return _artUriCache[artUrl];
     }
     
-    // Расширяем список префиксов для локальных путей
-    final localPrefixes = [
-      'assets/',
-      'images/',
-      'drawable/',
-      'ic_',
-      'img_',
-      'cover',
-      'default'
-    ];
+    Uri result;
     
-    for (final prefix in localPrefixes) {
-      if (artUrl.contains(prefix)) {
-        // Для фонового режима нужно использовать схему asset
-        if (artUrl.startsWith('assets/')) {
-          return Uri.parse('asset:///$artUrl');
-        } else if (artUrl.startsWith('images/')) {
-          return Uri.parse('asset:///assets/$artUrl');
-        } else {
-          // Предполагаем, что это asset в папке assets/images/
-          return Uri.parse('asset:///assets/images/$artUrl');
-        }
+    // Определяем тип URL по первым символам (самый быстрый способ)
+    final firstChar = artUrl[0];
+    final first5Chars = artUrl.length >= 5 ? artUrl.substring(0, 5) : '';
+    
+    if (first5Chars == 'https' || first5Chars == 'http:') {
+      result = Uri.parse(artUrl);
+    }
+    else if (first5Chars == 'asset') {
+      result = Uri.parse(artUrl);
+    }
+    else if (artUrl.length >= 6 && artUrl.substring(0, 6) == 'assets') {
+      result = Uri.parse('asset:///$artUrl');
+    }
+    else if (firstChar == 'i' && artUrl.length >= 6 && artUrl.substring(0, 6) == 'images') {
+      result = Uri.parse('asset:///assets/$artUrl');
+    }
+    else {
+      // Для остальных случаев - проверяем только расширения
+      final last4Chars = artUrl.length >= 4 ? artUrl.substring(artUrl.length - 4) : '';
+      final last5Chars = artUrl.length >= 5 ? artUrl.substring(artUrl.length - 5) : '';
+      
+      if (last4Chars == '.png' || 
+          last4Chars == '.jpg' || 
+          last5Chars == '.jpeg' || 
+          last5Chars == '.webp' || 
+          last4Chars == '.gif') {
+        result = Uri.parse('asset:///assets/images/$artUrl');
+      } else {
+        result = _defaultArtUri;
       }
     }
     
-    // Если это http/https URL
-    if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-      return Uri.parse(artUrl);
-    }
-    
-    // Если ничего не подошло - используем дефолтную обложку
-    debugPrint('⚠️ ArtUrl "$artUrl" not recognized, using default cover');
-    return _getDefaultArtUri();
-  }
-
-  Uri _getDefaultArtUri() {
-    // Гарантированный путь к дефолтной обложке
-    return Uri.parse('asset:///assets/images/default_cover.png');
+    _artUriCache[artUrl] = result;
+    return result;
   }
 
   void updatePlaybackState(bool isPlaying) {

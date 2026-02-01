@@ -365,7 +365,25 @@ class AudioPlayerService with ChangeNotifier {
       _notifyListeners();
     }
   }
-
+  
+  String getPreparedArtUrl(String rawArtUrl) {
+    if (rawArtUrl.isEmpty || rawArtUrl == AudioMetadata.defaultCoverUrl) {
+      return 'asset:///assets/images/default_cover.png';
+    }
+    
+    // Преобразуем локальные пути в полные asset:// пути сразу
+    if (rawArtUrl.startsWith('assets/')) {
+      return 'asset:///$rawArtUrl';
+    }
+    if (rawArtUrl.startsWith('images/')) {
+      return 'asset:///assets/$rawArtUrl';
+    }
+    if (rawArtUrl.contains('drawable/')) {
+      return 'android.resource://drawable/$rawArtUrl';
+    }
+    
+    return rawArtUrl; // http/https URL остаются как есть
+  }
 
   void _startWebMetadataPolling() {
     if (!kIsWeb) return;
