@@ -193,15 +193,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
       duration = audioPlayerService.currentEpisode?.duration;
     }
     
-    // ✅ ИСПРАВЛЕНИЕ: Используем дефолтную обложку из сервиса, если artUrl пустая или дефолтная
+    // ✅ ИСПРАВЛЕНИЕ: Получаем подготовленный URL
     String artUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
-    debugPrint('🎵 Original artUrl: $artUrl');
+    debugPrint('🎵 Prepared artUrl: $artUrl');
     
-    if (artUrl.isEmpty || 
-        artUrl == AudioMetadata.defaultCoverUrl || 
-        artUrl.contains('default_cover')) {
-      artUrl = audioPlayerService.getDefaultCoverUrlForBackground();
-      debugPrint('🎵 Replaced with default: $artUrl');
+    // Если все еще пусто или содержит default_cover, используем дефолтный
+    if (artUrl.isEmpty || artUrl.contains('default_cover')) {
+      artUrl = 'asset:///assets/images/default_cover.png';
+      debugPrint('🎵 Using default cover: $artUrl');
     }
     
     if (_currentMediaItem == null) {
@@ -210,7 +209,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? '',
-        artUri: _parseArtUri(artUrl), // ✅ Используем новый метод для парсинга URI
+        artUri: _parseArtUri(artUrl),
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
@@ -223,7 +222,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? _currentMediaItem!.album,
-        artUri: _parseArtUri(artUrl), // ✅ Используем новый метод для парсинга URI
+        artUri: _parseArtUri(artUrl),
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
@@ -233,6 +232,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       );
     }
     
+    debugPrint('🎵 Final MediaItem artUri: ${_currentMediaItem!.artUri}');
     mediaItem.add(_currentMediaItem);
     debugPrint('Background audio metadata updated: ${metadata.title}');
     
@@ -246,7 +246,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return _defaultArtUri;
     }
 
-    // Экстремально быстрые проверки
+    // Быстрая проверка
     if (artUrl.isEmpty || artUrl.length < 3) {
       return _defaultArtUri;
     }
@@ -258,36 +258,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     Uri result;
     
-    // Определяем тип URL по первым символам (самый быстрый способ)
-    final firstChar = artUrl[0];
-    final first5Chars = artUrl.length >= 5 ? artUrl.substring(0, 5) : '';
-    
-    if (first5Chars == 'https' || first5Chars == 'http:') {
+    try {
+      // Просто парсим URI, так как getPreparedArtUrl уже подготовил его
       result = Uri.parse(artUrl);
-    }
-    else if (first5Chars == 'asset') {
-      result = Uri.parse(artUrl);
-    }
-    else if (artUrl.length >= 6 && artUrl.substring(0, 6) == 'assets') {
-      result = Uri.parse('asset:///$artUrl');
-    }
-    else if (firstChar == 'i' && artUrl.length >= 6 && artUrl.substring(0, 6) == 'images') {
-      result = Uri.parse('asset:///assets/$artUrl');
-    }
-    else {
-      // Для остальных случаев - проверяем только расширения
-      final last4Chars = artUrl.length >= 4 ? artUrl.substring(artUrl.length - 4) : '';
-      final last5Chars = artUrl.length >= 5 ? artUrl.substring(artUrl.length - 5) : '';
-      
-      if (last4Chars == '.png' || 
-          last4Chars == '.jpg' || 
-          last5Chars == '.jpeg' || 
-          last5Chars == '.webp' || 
-          last4Chars == '.gif') {
-        result = Uri.parse('asset:///assets/images/$artUrl');
-      } else {
-        result = _defaultArtUri;
-      }
+    } catch (e) {
+      debugPrint('❌ Error parsing artUrl "$artUrl": $e');
+      result = _defaultArtUri;
     }
     
     _artUriCache[artUrl] = result;
@@ -397,15 +373,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _updateMediaItem() {
-    // ✅ ИСПРАВЛЕНИЕ: Используем дефолтную обложку из сервиса
-    final defaultCoverUrl = audioPlayerService.getDefaultCoverUrlForBackground();
+    const defaultCoverUrl = 'asset:///assets/images/default_cover.png';
+    debugPrint('🎵 _updateMediaItem with cover: $defaultCoverUrl');
     
     _currentMediaItem = MediaItem(
       id: 'jrr_live_stream',
       title: 'J-Rock Radio',
       artist: 'Live Stream',
       album: 'Онлайн радио',
-      artUri: _parseArtUri(defaultCoverUrl), // ✅ Используем ту же дефолтную обложку
+      artUri: _parseArtUri(defaultCoverUrl),
       extras: {'isRadio': true},
     );
     mediaItem.add(_currentMediaItem);

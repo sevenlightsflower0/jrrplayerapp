@@ -371,18 +371,42 @@ class AudioPlayerService with ChangeNotifier {
       return 'asset:///assets/images/default_cover.png';
     }
     
-    // Преобразуем локальные пути в полные asset:// пути сразу
+    // Если уже полный asset:// URL
+    if (rawArtUrl.startsWith('asset://')) {
+      return rawArtUrl;
+    }
+    
+    // Если уже android.resource:// URL
+    if (rawArtUrl.startsWith('android.resource://')) {
+      return rawArtUrl;
+    }
+    
+    // Если уже http/https URL
+    if (rawArtUrl.startsWith('http://') || rawArtUrl.startsWith('https://')) {
+      return rawArtUrl;
+    }
+    
+    // Преобразуем локальные пути
     if (rawArtUrl.startsWith('assets/')) {
       return 'asset:///$rawArtUrl';
     }
+    
     if (rawArtUrl.startsWith('images/')) {
       return 'asset:///assets/$rawArtUrl';
     }
+    
+    // Для drawable ресурсов
     if (rawArtUrl.contains('drawable/')) {
-      return 'android.resource://drawable/$rawArtUrl';
+      // Если уже начинается с drawable/, добавляем android.resource://
+      if (rawArtUrl.startsWith('drawable/')) {
+        return 'android.resource://$rawArtUrl';
+      }
+      // Иначе считаем, что это уже полный путь
+      return rawArtUrl;
     }
     
-    return rawArtUrl; // http/https URL остаются как есть
+    // Если ничего не подошло, считаем что это имя файла в assets/images/
+    return 'asset:///assets/images/$rawArtUrl';
   }
 
   void _startWebMetadataPolling() {
@@ -1587,7 +1611,7 @@ class AudioPlayerService with ChangeNotifier {
 
   /// Возвращает URL дефолтной обложки для использования в фоновом режиме
   String getDefaultCoverUrlForBackground() {
-    // Используем тот же путь, что и в _buildDefaultCover
-    return 'assets/images/default_cover.png';
+    // Возвращаем уже подготовленный полный путь
+    return 'asset:///assets/images/default_cover.png';
   }
 }
