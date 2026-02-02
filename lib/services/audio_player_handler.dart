@@ -186,56 +186,72 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void updateMetadata(AudioMetadata metadata) {
-    debugPrint('🎵 updateMetadata called with artUrl: ${metadata.artUrl}');
+    debugPrint('🎵 updateMetadata called with raw artUrl: ${metadata.artUrl}');
 
     Duration? duration;
     if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
       duration = audioPlayerService.currentEpisode?.duration;
     }
-    
-    // ✅ ИСПРАВЛЕНИЕ: Получаем подготовленный URL
-    String artUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
-    debugPrint('🎵 Prepared artUrl: $artUrl');
-    
-    // Если все еще пусто или содержит default_cover, используем дефолтный
-    if (artUrl.isEmpty || artUrl.contains('default_cover')) {
-      artUrl = 'asset:///assets/images/default_cover.png';
-      debugPrint('🎵 Using default cover: $artUrl');
+
+    // Получаем подготовленный URL
+    String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
+    debugPrint('🎵 Prepared artUrl: $preparedArtUrl');
+
+    // Если это дефолт — используем кэшированный дефолтный Uri
+    if (preparedArtUrl.contains('default_cover.png') || preparedArtUrl.isEmpty) {
+      preparedArtUrl = AudioPlayerHandler._defaultArtUriString;
+      debugPrint('🎵 Falling back to default cover');
     }
-    
+
+    Uri? artUri;
+    try {
+      artUri = Uri.parse(preparedArtUrl);
+
+      // Важно: для http/https Android требует, чтобы был доступен интернет
+      // и картинка загружалась быстро → поэтому кэшируем Uri
+      if (preparedArtUrl.startsWith('http')) {
+        // Можно дополнительно проверить, но обычно работает
+        debugPrint('Using remote cover: $preparedArtUrl');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to parse artUri: $preparedArtUrl → $e');
+      artUri = AudioPlayerHandler._defaultArtUri;
+    }
+
+    // Обновляем или создаём MediaItem
     if (_currentMediaItem == null) {
       _currentMediaItem = MediaItem(
         id: metadata.artist == 'Live Stream' ? 'jrr_live_stream' : 'podcast_${DateTime.now().millisecondsSinceEpoch}',
         title: metadata.title,
         artist: metadata.artist,
-        album: metadata.album ?? '',
-        artUri: _parseArtUri(artUrl),
+        album: metadata.album ?? 'J-Rock Radio',
+        artUri: artUri,
         duration: duration,
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
           'episodeId': audioPlayerService.currentEpisode?.id,
+          'artUrlRaw': metadata.artUrl, // для отладки
         },
       );
     } else {
-      _currentMediaItem = MediaItem(
-        id: _currentMediaItem!.id,
+      _currentMediaItem = _currentMediaItem!.copyWith(
         title: metadata.title,
         artist: metadata.artist,
         album: metadata.album ?? _currentMediaItem!.album,
-        artUri: _parseArtUri(artUrl),
+        artUri: artUri,
         duration: duration,
         extras: {
+          ...?_currentMediaItem!.extras,
           'isPodcast': audioPlayerService.isPodcastMode,
           'episodeId': audioPlayerService.currentEpisode?.id,
-          ..._currentMediaItem!.extras ?? {},
+          'artUrlRaw': metadata.artUrl,
         },
       );
     }
-    
-    debugPrint('🎵 Final MediaItem artUri: ${_currentMediaItem!.artUri}');
-    mediaItem.add(_currentMediaItem);
-    debugPrint('Background audio metadata updated: ${metadata.title}');
-    
+
+    debugPrint('🎵 Final MediaItem → artUri: ${artUri.toString()}');
+    mediaItem.add(_currentMediaItem!);
+
     _updateControls();
   }
 

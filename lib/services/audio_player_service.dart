@@ -14,7 +14,6 @@ import 'package:jrrplayerapp/services/audio_player_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class AudioMetadata {
-   // ✅ ИСПРАВЛЕНИЕ: Используем тот же путь, что и в основном приложении
   static const String defaultCoverUrl = 'assets/images/default_cover.png';
 
   final String title;
@@ -26,26 +25,26 @@ class AudioMetadata {
     required this.title,
     required this.artist,
     this.album,
-    String? artUrl, // Параметр nullable, но инициализируется дефолтным значением
-  }) : artUrl = artUrl ?? defaultCoverUrl; // Используем дефолтную обложку если null
+    String? artUrl,
+  }) : artUrl = artUrl ?? defaultCoverUrl;
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is AudioMetadata &&
-          runtimeType == other.runtimeType &&
-          title == other.title &&
-          artist == other.artist &&
-          album == other.album &&
-          artUrl == other.artUrl;
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other.runtimeType != runtimeType) return false;
+    return other is AudioMetadata &&
+        title == other.title &&
+        artist == other.artist &&
+        album == other.album &&  // Bare access - remove 'this.'
+        artUrl == other.artUrl;
+  }
 
   @override
-  int get hashCode =>
-      title.hashCode ^ artist.hashCode ^ album.hashCode ^ artUrl.hashCode;
+  int get hashCode => Object.hash(title, artist, album, artUrl);  // Bare access here too
 
   @override
   String toString() {
-    return 'AudioMetadata(title: $title, artist: $artist, album: $album, artUrl: $artUrl)';
+    return 'AudioMetadata(title: $title, artist: $artist, album: ${album ?? 'null'}, artUrl: $artUrl)';
   }
 }
 
@@ -366,46 +365,33 @@ class AudioPlayerService with ChangeNotifier {
     }
   }
   
-  String getPreparedArtUrl(String rawArtUrl) {
-    if (rawArtUrl.isEmpty || rawArtUrl == AudioMetadata.defaultCoverUrl) {
+  String getPreparedArtUrl(String? rawArtUrl) {
+    if (rawArtUrl == null || rawArtUrl.isEmpty) {
       return 'asset:///assets/images/default_cover.png';
     }
-    
-    // Если уже полный asset:// URL
-    if (rawArtUrl.startsWith('asset://')) {
+
+    // Уже готовые форматы
+    if (rawArtUrl.startsWith('asset://') ||
+        rawArtUrl.startsWith('android.resource://') ||
+        rawArtUrl.startsWith('http://') ||
+        rawArtUrl.startsWith('https://')) {
       return rawArtUrl;
     }
-    
-    // Если уже android.resource:// URL
-    if (rawArtUrl.startsWith('android.resource://')) {
-      return rawArtUrl;
-    }
-    
-    // Если уже http/https URL
-    if (rawArtUrl.startsWith('http://') || rawArtUrl.startsWith('https://')) {
-      return rawArtUrl;
-    }
-    
-    // Преобразуем локальные пути
+
+    // Локальные ассеты
     if (rawArtUrl.startsWith('assets/')) {
       return 'asset:///$rawArtUrl';
     }
-    
     if (rawArtUrl.startsWith('images/')) {
       return 'asset:///assets/$rawArtUrl';
     }
-    
-    // Для drawable ресурсов
-    if (rawArtUrl.contains('drawable/')) {
-      // Если уже начинается с drawable/, добавляем android.resource://
-      if (rawArtUrl.startsWith('drawable/')) {
-        return 'android.resource://$rawArtUrl';
-      }
-      // Иначе считаем, что это уже полный путь
-      return rawArtUrl;
+
+    // Deezer / внешние ссылки
+    if (rawArtUrl.startsWith('//')) {
+      return 'https:$rawArtUrl';
     }
-    
-    // Если ничего не подошло, считаем что это имя файла в assets/images/
+
+    // По умолчанию считаем, что это относительный путь в assets/images
     return 'asset:///assets/images/$rawArtUrl';
   }
 
@@ -573,10 +559,26 @@ class AudioPlayerService with ChangeNotifier {
             final album = track['album'];
 
             if (album != null && album['cover_big'] != null) {
-              final coverUrl = album['cover_big'].toString();
-              _coverCache[cacheKey] = coverUrl;
-              debugPrint('Found cover: $coverUrl');
-              return coverUrl;
+              String cover = album['cover_big'].toString();
+              
+              if (cover.startsWith('//')) {
+                cover = 'https:$cover';
+              }
+              
+              if (!cover.endsWith('.jpg') && !cover.endsWith('.png')) {
+                cover += '?size=big'; // иногда помогает
+              }
+              
+              _coverCache[cacheKey] = cover;
+              debugPrint('Found cover from Deezer: $cover');
+              return cover;
+            }
+
+            // Можно добавить запасной вариант — medium или small
+            if (album != null && album['cover_medium'] != null) {
+              final mediumCover = album['cover_medium'].toString();
+              _coverCache[cacheKey] = mediumCover;
+              return mediumCover;
             }
           }
         } else {
@@ -588,7 +590,6 @@ class AudioPlayerService with ChangeNotifier {
       }
     }
 
-    debugPrint('No cover found for: $artist - $cleanTitle');
     return null;
   }
 
