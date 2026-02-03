@@ -388,7 +388,12 @@ class AudioPlayerService with ChangeNotifier {
 
     // Deezer / внешние ссылки
     if (rawArtUrl.startsWith('//')) {
-      return 'https:$rawArtUrl';
+      return 'https:$rawArtUrl'; // Всегда используем HTTPS для внешних ссылок
+    }
+
+    // Для Deezer URL, которые могут быть без протокола
+    if (rawArtUrl.contains('cdn.deezer.com') && !rawArtUrl.startsWith('http')) {
+      return 'https://$rawArtUrl';
     }
 
     // По умолчанию считаем, что это относительный путь в assets/images

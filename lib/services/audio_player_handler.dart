@@ -1,4 +1,5 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:jrrplayerapp/audio/audio_constants.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
@@ -185,7 +186,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  void updateMetadata(AudioMetadata metadata) {
+  Future<void> updateMetadata(AudioMetadata metadata) async {
     debugPrint('🎵 updateMetadata called with raw artUrl: ${metadata.artUrl}');
 
     Duration? duration;
@@ -196,26 +197,24 @@ class AudioPlayerHandler extends BaseAudioHandler {
     // Получаем подготовленный URL
     String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
     debugPrint('🎵 Prepared artUrl: $preparedArtUrl');
-
-    // Если это дефолт — используем кэшированный дефолтный Uri
-    if (preparedArtUrl.contains('default_cover.png') || preparedArtUrl.isEmpty) {
-      preparedArtUrl = AudioPlayerHandler._defaultArtUriString;
-      debugPrint('🎵 Falling back to default cover');
-    }
-
-    Uri? artUri;
-    try {
-      artUri = Uri.parse(preparedArtUrl);
-
-      // Важно: для http/https Android требует, чтобы был доступен интернет
-      // и картинка загружалась быстро → поэтому кэшируем Uri
-      if (preparedArtUrl.startsWith('http')) {
-        // Можно дополнительно проверить, но обычно работает
-        debugPrint('Using remote cover: $preparedArtUrl');
+    
+    // ВМЕСТО сложной логики с Connectivity для iOS, используем кэшированный парсинг
+    Uri? artUri = _parseArtUri(preparedArtUrl);
+    
+    // Проверяем для iOS: если это http-ссылка, принудительно используем дефолт
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final uriString = artUri.toString();
+      if (uriString.startsWith('http://') && !uriString.contains('localhost')) {
+        debugPrint('⚠️ iOS: HTTP URL detected, forcing HTTPS or default');
+        // Пробуем конвертировать в HTTPS
+        try {
+          final httpsUri = Uri.parse(uriString.replaceFirst('http://', 'https://'));
+          artUri = httpsUri;
+        } catch (e) {
+          debugPrint('❌ Failed to convert to HTTPS, using default');
+          artUri = _defaultArtUri;
+        }
       }
-    } catch (e) {
-      debugPrint('❌ Failed to parse artUri: $preparedArtUrl → $e');
-      artUri = AudioPlayerHandler._defaultArtUri;
     }
 
     // Обновляем или создаём MediaItem
@@ -230,7 +229,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         extras: {
           'isPodcast': audioPlayerService.isPodcastMode,
           'episodeId': audioPlayerService.currentEpisode?.id,
-          'artUrlRaw': metadata.artUrl, // для отладки
+          'artUrlRaw': metadata.artUrl,
         },
       );
     } else {
@@ -251,7 +250,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
     debugPrint('🎵 Final MediaItem → artUri: ${artUri.toString()}');
     mediaItem.add(_currentMediaItem!);
-
     _updateControls();
   }
 
