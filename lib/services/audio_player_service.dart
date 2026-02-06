@@ -11,7 +11,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:jrrplayerapp/models/podcast.dart';
 import 'package:jrrplayerapp/services/audio_player_handler.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 
 class AudioMetadata {
   static const String defaultCoverUrl = 'assets/images/default_cover.png';
@@ -364,10 +364,12 @@ class AudioPlayerService with ChangeNotifier {
       _notifyListeners();
     }
   }
-  
+    
   String getPreparedArtUrl(String? rawArtUrl) {
     if (rawArtUrl == null || rawArtUrl.isEmpty) {
-      return 'asset:///assets/images/default_cover.png';
+      return defaultTargetPlatform == TargetPlatform.iOS 
+          ? 'assets/images/default_cover.png'
+          : 'asset:///assets/images/default_cover.png';
     }
 
     // Уже готовые форматы
@@ -375,15 +377,24 @@ class AudioPlayerService with ChangeNotifier {
         rawArtUrl.startsWith('android.resource://') ||
         rawArtUrl.startsWith('http://') ||
         rawArtUrl.startsWith('https://')) {
+      // Для iOS конвертируем asset:// в обычный путь
+      if (defaultTargetPlatform == TargetPlatform.iOS && rawArtUrl.startsWith('asset:///')) {
+        return rawArtUrl.replaceFirst('asset:///', '');
+      }
       return rawArtUrl;
     }
 
     // Локальные ассеты
     if (rawArtUrl.startsWith('assets/')) {
-      return 'asset:///$rawArtUrl';
+      return defaultTargetPlatform == TargetPlatform.iOS 
+          ? rawArtUrl
+          : 'asset:///$rawArtUrl';
     }
     if (rawArtUrl.startsWith('images/')) {
-      return 'asset:///assets/$rawArtUrl';
+      final path = 'assets/$rawArtUrl';
+      return defaultTargetPlatform == TargetPlatform.iOS 
+          ? path
+          : 'asset:///$path';
     }
 
     // Deezer / внешние ссылки
@@ -397,7 +408,10 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     // По умолчанию считаем, что это относительный путь в assets/images
-    return 'asset:///assets/images/$rawArtUrl';
+    final defaultPath = 'assets/images/$rawArtUrl';
+    return defaultTargetPlatform == TargetPlatform.iOS 
+        ? defaultPath
+        : 'asset:///$defaultPath';
   }
 
   void _startWebMetadataPolling() {
