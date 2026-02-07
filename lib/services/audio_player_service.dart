@@ -367,51 +367,32 @@ class AudioPlayerService with ChangeNotifier {
     
   String getPreparedArtUrl(String? rawArtUrl) {
     if (rawArtUrl == null || rawArtUrl.isEmpty) {
-      return defaultTargetPlatform == TargetPlatform.iOS 
-          ? 'assets/images/default_cover.png'
-          : 'asset:///assets/images/default_cover.png';
+      // Для дефолтной обложки всегда используем asset путь
+      return 'assets/images/default_cover.png';
     }
 
-    // Уже готовые форматы
-    if (rawArtUrl.startsWith('asset://') ||
-        rawArtUrl.startsWith('android.resource://') ||
-        rawArtUrl.startsWith('http://') ||
-        rawArtUrl.startsWith('https://')) {
-      // Для iOS конвертируем asset:// в обычный путь
-      if (defaultTargetPlatform == TargetPlatform.iOS && rawArtUrl.startsWith('asset:///')) {
-        return rawArtUrl.replaceFirst('asset:///', '');
-      }
+    // Если это уже готовый URL или asset путь
+    if (rawArtUrl.startsWith('http://') ||
+        rawArtUrl.startsWith('https://') ||
+        rawArtUrl.startsWith('asset:///') ||
+        rawArtUrl.startsWith('assets/')) {
       return rawArtUrl;
     }
 
-    // Локальные ассеты
-    if (rawArtUrl.startsWith('assets/')) {
-      return defaultTargetPlatform == TargetPlatform.iOS 
-          ? rawArtUrl
-          : 'asset:///$rawArtUrl';
-    }
-    if (rawArtUrl.startsWith('images/')) {
-      final path = 'assets/$rawArtUrl';
-      return defaultTargetPlatform == TargetPlatform.iOS 
-          ? path
-          : 'asset:///$path';
+    // Для iOS: просто возвращаем raw URL, обработка будет в Handler
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return rawArtUrl;
     }
 
-    // Deezer / внешние ссылки
-    if (rawArtUrl.startsWith('//')) {
-      return 'https:$rawArtUrl'; // Всегда используем HTTPS для внешних ссылок
+    // Для Android и других платформ: добавляем asset:// префикс
+    // Если это локальный путь к изображению
+    if (rawArtUrl.contains('/')) {
+      // Предполагаем, что это локальный файл
+      return 'asset:///$rawArtUrl';
+    } else {
+      // Предполагаем, что это имя файла в assets/images
+      return 'asset:///assets/images/$rawArtUrl';
     }
-
-    // Для Deezer URL, которые могут быть без протокола
-    if (rawArtUrl.contains('cdn.deezer.com') && !rawArtUrl.startsWith('http')) {
-      return 'https://$rawArtUrl';
-    }
-
-    // По умолчанию считаем, что это относительный путь в assets/images
-    final defaultPath = 'assets/images/$rawArtUrl';
-    return defaultTargetPlatform == TargetPlatform.iOS 
-        ? defaultPath
-        : 'asset:///$defaultPath';
   }
 
   void _startWebMetadataPolling() {
@@ -538,8 +519,8 @@ class AudioPlayerService with ChangeNotifier {
   Future<String?> _fetchCoverFromDeezer(String title, String artist) async {
     // Очищаем title от лишнего
     String cleanTitle = title
-      .replaceAll(RegExp(r'\([^)]*\)'), '') // Удаляем скобки с содержимым
-      .replaceAll(RegExp(r'\[[^\]]*\]'), '') // Удаляем квадратные скобки
+      .replaceAll(RegExp(r'\([^)]*\)'), '')
+      .replaceAll(RegExp(r'\[[^\]]*\]'), '')
       .replaceAll('Official Audio', '')
       .replaceAll('Official Video', '')
       .replaceAll('Music Video', '')
@@ -551,17 +532,19 @@ class AudioPlayerService with ChangeNotifier {
 
     final cacheKey = '$artist|$cleanTitle';
     if (_coverCache.containsKey(cacheKey)) {
-      return _coverCache[cacheKey];
+      final cachedUrl = _coverCache[cacheKey];
+      debugPrint('✅ Using cached cover for $artist - $cleanTitle: $cachedUrl');
+      return cachedUrl;
     }
 
     final query = '${Uri.encodeComponent(artist)} ${Uri.encodeComponent(cleanTitle)}';
     final urls = AppStrings.getDeezerApiUrls(query);
 
-    debugPrint('Searching Deezer for: $artist - $cleanTitle');
+    debugPrint('🔍 Searching Deezer for: $artist - $cleanTitle');
 
     for (final url in urls) {
       try {
-        debugPrint('Trying Deezer API: $url');
+        debugPrint('🌐 Trying Deezer API: $url');
 
         final response = await http.get(
           Uri.parse(url),
@@ -580,45 +563,54 @@ class AudioPlayerService with ChangeNotifier {
             if (album != null && album['cover_big'] != null) {
               String cover = album['cover_big'].toString();
               
+              // Убедимся, что это полный URL
               if (cover.startsWith('//')) {
                 cover = 'https:$cover';
               }
               
-              if (!cover.endsWith('.jpg') && !cover.endsWith('.png')) {
-                cover += '?size=big'; // иногда помогает
+              if (!cover.startsWith('http')) {
+                cover = 'https://$cover';
               }
               
               _coverCache[cacheKey] = cover;
-              debugPrint('Found cover from Deezer: $cover');
+              debugPrint('✅ Found cover from Deezer: $cover');
               return cover;
             }
 
-            // Можно добавить запасной вариант — medium или small
+            // Запасные варианты
             if (album != null && album['cover_medium'] != null) {
-              final mediumCover = album['cover_medium'].toString();
+              String mediumCover = album['cover_medium'].toString();
+              if (mediumCover.startsWith('//')) {
+                mediumCover = 'https:$mediumCover';
+              }
               _coverCache[cacheKey] = mediumCover;
               return mediumCover;
             }
+            
+            if (album != null && album['cover_small'] != null) {
+              String smallCover = album['cover_small'].toString();
+              if (smallCover.startsWith('//')) {
+                smallCover = 'https:$smallCover';
+              }
+              _coverCache[cacheKey] = smallCover;
+              return smallCover;
+            }
           }
         } else {
-          debugPrint('Deezer API returned status: ${response.statusCode}');
+          debugPrint('❌ Deezer API returned status: ${response.statusCode}');
         }
       } catch (e) {
-        debugPrint('Deezer API $url failed: $e');
+        debugPrint('⚠️ Deezer API $url failed: $e');
         continue;
       }
     }
 
+    debugPrint('❌ No cover found for $artist - $cleanTitle');
     return null;
   }
 
   void _handleStreamMetadata(IcyMetadata? metadata) async {
-    // Игнорируем метаданные потока в режиме подкаста
-    if (_isPodcastMode) {
-      return;
-    }
-
-    // На Web используем отдельный механизм
+    if (_isPodcastMode) return;
     if (kIsWeb) return;
 
     if (metadata != null && metadata.info != null) {
@@ -626,39 +618,31 @@ class AudioPlayerService with ChangeNotifier {
       if (title != null && title.isNotEmpty && title != 'Unknown') {
         final (songTitle, artist) = _splitArtistAndTitle(title);
 
-        final cacheKey = '$artist|$songTitle';
+        // Создаем метаданные сразу с дефолтной обложкой
+        final initialMetadata = AudioMetadata(
+          title: songTitle,
+          artist: artist,
+          album: 'J-Rock Radio',
+          artUrl: AudioMetadata.defaultCoverUrl, // Дефолтная обложка
+        );
+        
+        // Немедленно обновляем UI с дефолтной обложкой
+        updateMetadata(initialMetadata);
 
-        // Проверяем кэш
-        if (_coverCache.containsKey(cacheKey)) {
-          final cachedMetadata = AudioMetadata(
-            title: songTitle,
-            artist: artist,
-            album: 'J-Rock Radio',
-            artUrl: _coverCache[cacheKey],
-          );
-
-          // Обновляем тег в текущем источнике
-          final player = getPlayer();
-          if (player != null && player.playing) {
-            // К сожалению, мы не можем динамически изменить тег существующего источника
-            // Просто обновляем метаданные через сервис
-          }
-          updateMetadata(cachedMetadata);
-        } else {
-          // Асинхронно загружаем обложку
-          final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
-          if (artUrl != null) {
-            _coverCache[cacheKey] = artUrl;
-          }
-
-          final newMetadata = AudioMetadata(
+        // Асинхронно ищем лучшую обложку
+        final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
+        if (artUrl != null) {
+          final cacheKey = '$artist|$songTitle';
+          _coverCache[cacheKey] = artUrl;
+          
+          // Обновляем с найденной обложкой
+          final updatedMetadata = AudioMetadata(
             title: songTitle,
             artist: artist,
             album: 'J-Rock Radio',
             artUrl: artUrl,
           );
-
-          updateMetadata(newMetadata);
+          updateMetadata(updatedMetadata);
         }
       }
     }

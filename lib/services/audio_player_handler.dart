@@ -4,11 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:jrrplayerapp/audio/audio_constants.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
-import 'dart:io'; 
 import 'package:just_audio/just_audio.dart';
-import 'package:http/http.dart' as http; 
-import 'package:path_provider/path_provider.dart'; 
-import 'package:shared_preferences/shared_preferences.dart'; 
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
@@ -24,7 +20,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   static final Uri _defaultArtUri = Uri.parse(_defaultArtUriString);
   
   // iOS-специфичный кэш для изображений
-  final Map<String, String> _iosImageCache = {};
 
 
   AudioPlayerHandler(this.audioPlayerService) {
@@ -205,159 +200,67 @@ class AudioPlayerHandler extends BaseAudioHandler {
     String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
     debugPrint('🎵 Prepared artUrl: $preparedArtUrl');
     
-    // ВМЕСТО сложной логики с Connectivity для iOS, используем кэшированный парсинг
-    Uri? artUri = _parseArtUri(preparedArtUrl);
-    
-    // ✅ ИСПРАВЛЕНИЕ ДЛЯ iOS
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final uriString = artUri.toString();
-      
-      // Для iOS: используем только локальные ресурсы или закэшированные изображения
-      if (uriString.startsWith('http://') || uriString.startsWith('https://')) {
-        debugPrint('⚠️ iOS: Network URL detected, trying to use cached version');
-        
-        // Пробуем получить закэшированный путь
-        final cachedPath = await _getCachedImagePathForIOS(uriString, metadata.title);
-        if (cachedPath != null && await File(cachedPath).exists()) {
-          debugPrint('✅ iOS: Using cached image at: $cachedPath');
-          artUri = Uri.file(cachedPath);
-        } else {
-          // Если нет в кэше, используем дефолт
-          debugPrint('❌ iOS: No cached image, using default');
-          artUri = _defaultArtUri;
-          
-          // Асинхронно загружаем в кэш для будущего использования
-          _preloadAndCacheImageForIOS(uriString, metadata.title);
-        }
-      } else if (uriString.startsWith('asset://')) {
-        // Конвертируем asset:// в формат для iOS
-        final assetPath = uriString.replaceFirst('asset:///', '');
-        artUri = Uri.parse('asset://$assetPath');
-      }
-    }
+    // Создаем MediaItem с правильным artUri
+    MediaItem newMediaItem = MediaItem(
+      id: metadata.artist == 'Live Stream' ? 'jrr_live_stream' : 'podcast_${DateTime.now().millisecondsSinceEpoch}',
+      title: metadata.title,
+      artist: metadata.artist,
+      album: metadata.album ?? 'J-Rock Radio',
+      artUri: _getArtUriForPlatform(preparedArtUrl),
+      duration: duration,
+      extras: {
+        'isPodcast': audioPlayerService.isPodcastMode,
+        'episodeId': audioPlayerService.currentEpisode?.id,
+        'artUrlRaw': metadata.artUrl,
+        'artUrlPrepared': preparedArtUrl, // Добавляем для отладки
+      },
+    );
 
-    // Обновляем или создаём MediaItem
-    if (_currentMediaItem == null) {
-      _currentMediaItem = MediaItem(
-        id: metadata.artist == 'Live Stream' ? 'jrr_live_stream' : 'podcast_${DateTime.now().millisecondsSinceEpoch}',
-        title: metadata.title,
-        artist: metadata.artist,
-        album: metadata.album ?? 'J-Rock Radio',
-        artUri: artUri,
-        duration: duration,
-        extras: {
-          'isPodcast': audioPlayerService.isPodcastMode,
-          'episodeId': audioPlayerService.currentEpisode?.id,
-          'artUrlRaw': metadata.artUrl,
-        },
-      );
-    } else {
-      _currentMediaItem = _currentMediaItem!.copyWith(
-        title: metadata.title,
-        artist: metadata.artist,
-        album: metadata.album ?? _currentMediaItem!.album,
-        artUri: artUri,
-        duration: duration,
-        extras: {
-          ...?_currentMediaItem!.extras,
-          'isPodcast': audioPlayerService.isPodcastMode,
-          'episodeId': audioPlayerService.currentEpisode?.id,
-          'artUrlRaw': metadata.artUrl,
-        },
-      );
-    }
-
-    debugPrint('🎵 Final MediaItem → artUri: ${artUri.toString()}');
+    _currentMediaItem = newMediaItem;
     mediaItem.add(_currentMediaItem!);
     _updateControls();
+    
+    debugPrint('🎵 MediaItem created with artUri: ${_currentMediaItem!.artUri}');
   }
 
-  // ✅ МЕТОД ДЛЯ ПРЕДВАРИТЕЛЬНОЙ ЗАГРУЗКИ И КЭШИРОВАНИЯ ИЗОБРАЖЕНИЙ ДЛЯ iOS
-  Future<void> _preloadAndCacheImageForIOS(String imageUrl, String cacheKey) async {
-    try {
-      // Генерируем ключ кэша на основе URL и названия трека
-      final safeCacheKey = 'ios_${_generateCacheKey(imageUrl, cacheKey)}';
-      
-      // Проверяем, не загружаем ли мы уже это изображение
-      if (_iosImageCache.containsKey(safeCacheKey)) {
-        return;
-      }
-      
-      debugPrint('🔄 iOS: Preloading image: $imageUrl');
-      
-      final response = await http.get(Uri.parse(imageUrl));
-      if (response.statusCode == 200) {
-        // Сохраняем во временный файл
-        final tempDir = await getTemporaryDirectory();
-        final fileName = '${DateTime.now().millisecondsSinceEpoch}_${safeCacheKey.hashCode}.jpg';
-        final filePath = '${tempDir.path}/$fileName';
-        final file = File(filePath);
-        await file.writeAsBytes(response.bodyBytes);
-        
-        // Сохраняем в памяти
-        _iosImageCache[safeCacheKey] = filePath;
-        
-        // Сохраняем в SharedPreferences для будущих сессий
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(safeCacheKey, filePath);
-        
-        debugPrint('✅ iOS: Image cached at: $filePath');
-      }
-    } catch (e) {
-      debugPrint('❌ iOS: Failed to cache image $imageUrl: $e');
+  // Новый метод для получения правильного artUri в зависимости от платформы
+  Uri? _getArtUriForPlatform(String artUrl) {
+    if (artUrl.isEmpty) {
+      return _defaultArtUri;
     }
-  }
 
-  // ✅ МЕТОД ДЛЯ ПОЛУЧЕНИЯ ЗАКЭШИРОВАННОГО ПУТИ ДЛЯ iOS
-  Future<String?> _getCachedImagePathForIOS(String imageUrl, String cacheKey) async {
     try {
-      final safeCacheKey = 'ios_${_generateCacheKey(imageUrl, cacheKey)}';
-      
-      // Сначала проверяем кэш в памяти
-      if (_iosImageCache.containsKey(safeCacheKey)) {
-        final cachedPath = _iosImageCache[safeCacheKey]!;
-        if (await File(cachedPath).exists()) {
-          return cachedPath;
+      // Для iOS: если это HTTP URL, используем его напрямую
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
+          return Uri.parse(artUrl);
+        }
+        // Для asset путей на iOS
+        if (artUrl.startsWith('assets/')) {
+          // iOS ожидает asset путь без префикса
+          return Uri.parse('asset:///FlutterAssets/$artUrl');
         }
       }
       
-      // Затем проверяем SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final cachedPath = prefs.getString(safeCacheKey);
-      
-      if (cachedPath != null && await File(cachedPath).exists()) {
-        // Обновляем кэш в памяти
-        _iosImageCache[safeCacheKey] = cachedPath;
-        return cachedPath;
+      // Для Android: используем стандартный парсинг
+      if (artUrl.startsWith('asset:///')) {
+        return Uri.parse(artUrl);
       }
       
-      return null;
+      if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
+        return Uri.parse(artUrl);
+      }
+      
+      // По умолчанию
+      return _defaultArtUri;
     } catch (e) {
-      debugPrint('❌ iOS: Error getting cached path: $e');
-      return null;
+      debugPrint('❌ Error creating artUri for $artUrl: $e');
+      return _defaultArtUri;
     }
   }
 
-  // ✅ ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ГЕНЕРАЦИИ КЛЮЧА КЭША
-  String _generateCacheKey(String imageUrl, String title) {
-    // Создаем хэш из URL и названия трека
-    final key = '${imageUrl}_$title';
-    return key.hashCode.toRadixString(16);
-  }
-
-  // Парсит URI для обложки в фоновом режиме
   Uri? _parseArtUri(String artUrl) {
-    // Самый быстрый вариант - если URL уже правильный
-    if (artUrl == 'asset:///assets/images/default_cover.png') {
-      return _defaultArtUri;
-    }
-
-    // Быстрая проверка
-    if (artUrl.isEmpty || artUrl.length < 3) {
-      return _defaultArtUri;
-    }
-    
-    // Кэш
+    // Проверка кэша
     if (_artUriCache.containsKey(artUrl)) {
       return _artUriCache[artUrl];
     }
@@ -365,8 +268,27 @@ class AudioPlayerHandler extends BaseAudioHandler {
     Uri result;
     
     try {
-      // Просто парсим URI, так как getPreparedArtUrl уже подготовил его
-      result = Uri.parse(artUrl);
+      // Для iOS особый случай
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        if (artUrl.startsWith('assets/')) {
+          // iOS ожидает путь вида: asset:///FlutterAssets/assets/...
+          result = Uri.parse('asset:///FlutterAssets/$artUrl');
+        } else if (artUrl.startsWith('http')) {
+          // Для сетевых URL на iOS просто используем их
+          result = Uri.parse(artUrl);
+        } else {
+          result = _defaultArtUri;
+        }
+      } else {
+        // Для Android и других платформ
+        if (artUrl.startsWith('assets/')) {
+          result = Uri.parse('asset:///$artUrl');
+        } else if (artUrl.startsWith('http')) {
+          result = Uri.parse(artUrl);
+        } else {
+          result = _defaultArtUri;
+        }
+      }
     } catch (e) {
       debugPrint('❌ Error parsing artUrl "$artUrl": $e');
       result = _defaultArtUri;
