@@ -454,6 +454,23 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('🔄 ArtUri cache cleared');
   }
 
+  void refreshArtUriForNewTrack(String newArtUrl) {
+    // Очищаем кэш для старого трека
+    if (_currentMediaItem?.extras?['artUrlRaw'] != null) {
+      final oldArtUrl = _currentMediaItem!.extras!['artUrlRaw'] as String;
+      if (_artUriCache.containsKey(oldArtUrl)) {
+        _artUriCache.remove(oldArtUrl);
+        debugPrint('🔄 Cleared artUri cache for old track: $oldArtUrl');
+      }
+    }
+    
+    // Предзагружаем URI для нового трека
+    if (newArtUrl.isNotEmpty) {
+      _getArtUriForPlatform(newArtUrl);
+      debugPrint('🔄 Pre-cached artUri for new track: $newArtUrl');
+    }
+  }
+
   void _updateMediaItem() {
     const defaultCoverUrl = 'asset:///assets/images/default_cover.png';
     debugPrint('🎵 _updateMediaItem with cover: $defaultCoverUrl');
