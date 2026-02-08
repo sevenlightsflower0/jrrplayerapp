@@ -618,31 +618,40 @@ class AudioPlayerService with ChangeNotifier {
       if (title != null && title.isNotEmpty && title != 'Unknown') {
         final (songTitle, artist) = _splitArtistAndTitle(title);
 
-        // Создаем метаданные сразу с дефолтной обложкой
+        // Ключевое изменение: Создаем уникальный ID для каждого трека
+        
+        // Создаем метаданные с уникальным ID
         final initialMetadata = AudioMetadata(
           title: songTitle,
           artist: artist,
           album: 'J-Rock Radio',
-          artUrl: AudioMetadata.defaultCoverUrl, // Дефолтная обложка
+          artUrl: AudioMetadata.defaultCoverUrl,
         );
         
-        // Немедленно обновляем UI с дефолтной обложкой
+        // Немедленно обновляем UI
         updateMetadata(initialMetadata);
 
         // Асинхронно ищем лучшую обложку
         final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
         if (artUrl != null) {
-          final cacheKey = '$artist|$songTitle';
-          _coverCache[cacheKey] = artUrl;
-          
-          // Обновляем с найденной обложкой
           final updatedMetadata = AudioMetadata(
             title: songTitle,
             artist: artist,
             album: 'J-Rock Radio',
             artUrl: artUrl,
           );
+          
+          // Снова обновляем с найденной обложкой
           updateMetadata(updatedMetadata);
+          
+          // Принудительное обновление для iOS
+          if (defaultTargetPlatform == TargetPlatform.iOS) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+                (_audioHandler as AudioPlayerHandler).forceUpdateMediaItem();
+              }
+            });
+          }
         }
       }
     }

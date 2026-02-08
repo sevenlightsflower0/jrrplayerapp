@@ -15,7 +15,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   StreamSubscription<ProcessingState>? _processingSubscription;
   bool _isHandlingControl = false;
   Timer? _commandTimeoutTimer;
-  final Map<String, Uri> _artUriCache = {}; // Кэш для быстрого доступа
+// Кэш для быстрого доступа
   static const String _defaultArtUriString = 'asset:///assets/images/default_cover.png';
   static final Uri _defaultArtUri = Uri.parse(_defaultArtUriString);
   
@@ -188,6 +188,20 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
+  void forceUpdateMediaItem() {
+    if (_currentMediaItem != null) {
+      // Создаем копию с новым timestamp для принудительного обновления
+      MediaItem updatedItem = _currentMediaItem!.copyWith(
+        extras: {
+          ..._currentMediaItem!.extras ?? {},
+          'forceUpdate': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+      _currentMediaItem = updatedItem;
+      mediaItem.add(_currentMediaItem!);
+    }
+  }
+
   Future<void> updateMetadata(AudioMetadata metadata) async {
     debugPrint('🎵 updateMetadata called with raw artUrl: ${metadata.artUrl}');
 
@@ -200,102 +214,102 @@ class AudioPlayerHandler extends BaseAudioHandler {
     String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
     debugPrint('🎵 Prepared artUrl: $preparedArtUrl');
     
+    // Ключевое изменение: всегда создаем новый MediaItem с уникальным ID
+    String mediaId;
+    if (metadata.artist == 'Live Stream') {
+      // Для радио: используем комбинацию artist+title+timestamp для уникальности
+      mediaId = 'jrr_live_stream_${metadata.title}_${DateTime.now().millisecondsSinceEpoch}';
+    } else {
+      mediaId = 'podcast_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    
+    // Получаем artUri через унифицированный метод
+    Uri? artUri = _getArtUriForPlatform(preparedArtUrl);
+    
     // Создаем MediaItem с правильным artUri
     MediaItem newMediaItem = MediaItem(
-      id: metadata.artist == 'Live Stream' ? 'jrr_live_stream' : 'podcast_${DateTime.now().millisecondsSinceEpoch}',
+      id: mediaId, // Изменено для уникальности
       title: metadata.title,
       artist: metadata.artist,
       album: metadata.album ?? 'J-Rock Radio',
-      artUri: _getArtUriForPlatform(preparedArtUrl),
+      artUri: artUri,
       duration: duration,
       extras: {
         'isPodcast': audioPlayerService.isPodcastMode,
         'episodeId': audioPlayerService.currentEpisode?.id,
         'artUrlRaw': metadata.artUrl,
-        'artUrlPrepared': preparedArtUrl, // Добавляем для отладки
+        'artUrlPrepared': preparedArtUrl,
+        'timestamp': DateTime.now().millisecondsSinceEpoch, // Для предотвращения кэширования
       },
     );
 
     _currentMediaItem = newMediaItem;
+    
+    // Ключевое изменение: Принудительно обновляем медиа-элемент
     mediaItem.add(_currentMediaItem!);
+    
+    // Обновляем контролы
     _updateControls();
     
-    debugPrint('🎵 MediaItem created with artUri: ${_currentMediaItem!.artUri}');
+    // Синхронизируем состояние воспроизведения
+    final player = audioPlayerService.getPlayer();
+    if (player != null) {
+      updatePlaybackState(player.playing);
+    }
+    
+    debugPrint('🎵 MediaItem updated with artUri: ${_currentMediaItem!.artUri}');
+    debugPrint('🎵 MediaItem ID: ${_currentMediaItem!.id}');
   }
 
-  // Новый метод для получения правильного artUri в зависимости от платформы
+  final Map<String, Uri> _artUriCache = {}; // Оставьте эту строку
+
   Uri? _getArtUriForPlatform(String artUrl) {
-    if (artUrl.isEmpty) {
-      return _defaultArtUri;
-    }
-
-    try {
-      // Для iOS: если это HTTP URL, используем его напрямую
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-          return Uri.parse(artUrl);
-        }
-        // Для asset путей на iOS
-        if (artUrl.startsWith('assets/')) {
-          // iOS ожидает asset путь без префикса
-          return Uri.parse('asset:///FlutterAssets/$artUrl');
-        }
-      }
-      
-      // Для Android: используем стандартный парсинг
-      if (artUrl.startsWith('asset:///')) {
-        return Uri.parse(artUrl);
-      }
-      
-      if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-        return Uri.parse(artUrl);
-      }
-      
-      // По умолчанию
-      return _defaultArtUri;
-    } catch (e) {
-      debugPrint('❌ Error creating artUri for $artUrl: $e');
-      return _defaultArtUri;
-    }
-  }
-
-  Uri? _parseArtUri(String artUrl) {
     // Проверка кэша
     if (_artUriCache.containsKey(artUrl)) {
       return _artUriCache[artUrl];
     }
     
-    Uri result;
-    
+    if (artUrl.isEmpty || artUrl == AudioMetadata.defaultCoverUrl) {
+      _artUriCache[artUrl] = _defaultArtUri;
+      return _defaultArtUri;
+    }
+
     try {
-      // Для iOS особый случай
+      Uri result;
+      
+      // Для iOS: особый случай для asset путей
       if (defaultTargetPlatform == TargetPlatform.iOS) {
-        if (artUrl.startsWith('assets/')) {
-          // iOS ожидает путь вида: asset:///FlutterAssets/assets/...
+        if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
+          result = Uri.parse(artUrl);
+        } else if (artUrl.startsWith('assets/')) {
+          // iOS ожидает: asset:///FlutterAssets/assets/...
           result = Uri.parse('asset:///FlutterAssets/$artUrl');
-        } else if (artUrl.startsWith('http')) {
-          // Для сетевых URL на iOS просто используем их
+        } else if (artUrl.startsWith('asset://')) {
           result = Uri.parse(artUrl);
         } else {
           result = _defaultArtUri;
         }
       } else {
         // Для Android и других платформ
-        if (artUrl.startsWith('assets/')) {
+        if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
+          result = Uri.parse(artUrl);
+        } else if (artUrl.startsWith('assets/')) {
+          // Android ожидает: asset:///assets/...
           result = Uri.parse('asset:///$artUrl');
-        } else if (artUrl.startsWith('http')) {
+        } else if (artUrl.startsWith('asset://')) {
           result = Uri.parse(artUrl);
         } else {
           result = _defaultArtUri;
         }
       }
+      
+      _artUriCache[artUrl] = result;
+      return result;
     } catch (e) {
-      debugPrint('❌ Error parsing artUrl "$artUrl": $e');
-      result = _defaultArtUri;
+      debugPrint('❌ Error creating artUri for $artUrl: $e');
+      _artUriCache[artUrl] = _defaultArtUri;
+      return _defaultArtUri;
     }
-    
-    _artUriCache[artUrl] = result;
-    return result;
   }
 
   void updatePlaybackState(bool isPlaying) {
@@ -400,6 +414,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
     ));
   }
 
+  void clearArtUriCache() {
+    _artUriCache.clear();
+    debugPrint('🔄 ArtUri cache cleared');
+  }
+
   void _updateMediaItem() {
     const defaultCoverUrl = 'asset:///assets/images/default_cover.png';
     debugPrint('🎵 _updateMediaItem with cover: $defaultCoverUrl');
@@ -409,7 +428,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       title: 'J-Rock Radio',
       artist: 'Live Stream',
       album: 'Онлайн радио',
-      artUri: _parseArtUri(defaultCoverUrl),
+      artUri: _getArtUriForPlatform(defaultCoverUrl),
       extras: {'isRadio': true},
     );
     mediaItem.add(_currentMediaItem);
