@@ -618,6 +618,13 @@ class AudioPlayerService with ChangeNotifier {
       if (title != null && title.isNotEmpty && title != 'Unknown') {
         final (songTitle, artist) = _splitArtistAndTitle(title);
 
+        // Уведомляем handler о смене трека
+        if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+          (_audioHandler as AudioPlayerHandler).refreshArtUriForNewTrack(
+            AudioMetadata.defaultCoverUrl
+          );
+        }
+        
         // Ключевое изменение: Создаем уникальный ID для каждого трека
         
         // Создаем метаданные с уникальным ID

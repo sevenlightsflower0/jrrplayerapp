@@ -190,15 +190,34 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   void forceUpdateMediaItem() {
     if (_currentMediaItem != null) {
-      // Создаем копию с новым timestamp для принудительного обновления
-      MediaItem updatedItem = _currentMediaItem!.copyWith(
+      // Создаем копию с полностью новым extras
+      MediaItem updatedItem = MediaItem(
+        id: _currentMediaItem!.id,
+        title: _currentMediaItem!.title,
+        artist: _currentMediaItem!.artist!,
+        album: _currentMediaItem!.album ?? 'J-Rock Radio',
+        artUri: _currentMediaItem!.artUri,
+        duration: _currentMediaItem!.duration,
         extras: {
           ..._currentMediaItem!.extras ?? {},
           'forceUpdate': DateTime.now().millisecondsSinceEpoch,
+          'updatedAt': DateTime.now().toIso8601String(),
         },
       );
+      
       _currentMediaItem = updatedItem;
       mediaItem.add(_currentMediaItem!);
+      
+      debugPrint('🔄 Force updated MediaItem with artUri: ${_currentMediaItem!.artUri}');
+      
+      // Для iOS дополнительно обновляем состояние
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          playbackState.add(playbackState.value.copyWith(
+            updatePosition: playbackState.value.position,
+          ));
+        });
+      }
     }
   }
 
@@ -214,13 +233,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
     String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
     debugPrint('🎵 Prepared artUrl: $preparedArtUrl');
     
-    // Ключевое изменение: всегда создаем новый MediaItem с уникальным ID
+    // Для радио используем фиксированный ID для лучшей стабильности в уведомлениях
     String mediaId;
-    if (metadata.artist == 'Live Stream') {
-      // Для радио: используем комбинацию artist+title+timestamp для уникальности
-      mediaId = 'jrr_live_stream_${metadata.title}_${DateTime.now().millisecondsSinceEpoch}';
+    bool isRadio = metadata.artist == 'Live Stream' || !audioPlayerService.isPodcastMode;
+    
+    if (isRadio) {
+      // Для радио используем фиксированный ID
+      mediaId = 'jrr_live_stream';
     } else {
-      mediaId = 'podcast_${DateTime.now().millisecondsSinceEpoch}';
+      // Для подкастов используем ID эпизода
+      mediaId = 'podcast_${audioPlayerService.currentEpisode?.id ?? DateTime.now().millisecondsSinceEpoch}';
     }
     
     // Получаем artUri через унифицированный метод
@@ -228,7 +250,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     // Создаем MediaItem с правильным artUri
     MediaItem newMediaItem = MediaItem(
-      id: mediaId, // Изменено для уникальности
+      id: mediaId,
       title: metadata.title,
       artist: metadata.artist,
       album: metadata.album ?? 'J-Rock Radio',
@@ -239,13 +261,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
         'episodeId': audioPlayerService.currentEpisode?.id,
         'artUrlRaw': metadata.artUrl,
         'artUrlPrepared': preparedArtUrl,
-        'timestamp': DateTime.now().millisecondsSinceEpoch, // Для предотвращения кэширования
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'isRadio': isRadio,
       },
     );
 
     _currentMediaItem = newMediaItem;
     
-    // Ключевое изменение: Принудительно обновляем медиа-элемент
+    // Принудительно обновляем медиа-элемент
     mediaItem.add(_currentMediaItem!);
     
     // Обновляем контролы
@@ -259,6 +282,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     debugPrint('🎵 MediaItem updated with artUri: ${_currentMediaItem!.artUri}');
     debugPrint('🎵 MediaItem ID: ${_currentMediaItem!.id}');
+    
+    // Для iOS дополнительно вызываем forceUpdateMediaItem
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        forceUpdateMediaItem();
+      });
+    }
   }
 
   final Map<String, Uri> _artUriCache = {}; // Оставьте эту строку
@@ -269,7 +299,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return _artUriCache[artUrl];
     }
     
-    if (artUrl.isEmpty || artUrl == AudioMetadata.defaultCoverUrl) {
+    // Исправьте сравнение - проверяем, является ли это дефолтной обложкой
+    if (artUrl.isEmpty || 
+        artUrl == 'assets/images/default_cover.png' || 
+        artUrl == AudioMetadata.defaultCoverUrl) {
       _artUriCache[artUrl] = _defaultArtUri;
       return _defaultArtUri;
     }
@@ -287,6 +320,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         } else if (artUrl.startsWith('asset://')) {
           result = Uri.parse(artUrl);
         } else {
+          // Для iOS возвращаем дефолтную обложку
           result = _defaultArtUri;
         }
       } else {
@@ -299,6 +333,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         } else if (artUrl.startsWith('asset://')) {
           result = Uri.parse(artUrl);
         } else {
+          // Для Android возвращаем дефолтную обложку
           result = _defaultArtUri;
         }
       }
