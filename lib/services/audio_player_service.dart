@@ -67,7 +67,7 @@ class AudioPlayerService with ChangeNotifier {
   AudioMetadata? get currentMetadata => _currentMetadata;
   bool get isInitialized => _isInitialized;
 
-  final Map<String, String> _coverCache = {};
+  final Map<String, String?> _coverCache = {};
 
   String? _currentOperationId;
 
@@ -339,26 +339,36 @@ class AudioPlayerService with ChangeNotifier {
   // ==================== Web Metadata Handling ====================
 
   void updateMetadata(AudioMetadata newMetadata) {
-    debugPrint('Updating metadata: ${newMetadata.title}');
-    debugPrint('Current artUrl: ${_currentMetadata?.artUrl}');
-    debugPrint('New artUrl: ${newMetadata.artUrl}');
+    debugPrint('🎵 updateMetadata called with raw artUrl: ${newMetadata.artUrl}');
+    debugPrint('🎵 Title: ${newMetadata.title}, Artist: ${newMetadata.artist}');
 
-    // Вместо сравнения через ==, сравниваем только ключевые поля
-    bool shouldUpdate = _currentMetadata == null ||
+    // Всегда обновляем метаданные для радио
+    if (!_isPodcastMode) {
+      _currentMetadata = newMetadata;
+      debugPrint('🎵 Radio metadata updated with artUrl: ${newMetadata.artUrl}');
+
+      // Обновляем метаданные в background audio
+      _updateBackgroundAudioMetadata(newMetadata);
+
+      _notifyListeners();
+      return;
+    }
+
+    // Для подкастов используем сравнение
+    if (_currentMetadata == null || 
         _currentMetadata!.title != newMetadata.title ||
         _currentMetadata!.artist != newMetadata.artist ||
-        _currentMetadata!.artUrl != newMetadata.artUrl;
-
-    if (shouldUpdate) {
+        _currentMetadata!.artUrl != newMetadata.artUrl) {
+      
       _currentMetadata = newMetadata;
-      debugPrint('Metadata updated: ${newMetadata.title}');
+      debugPrint('🎵 Podcast metadata updated with artUrl: ${newMetadata.artUrl}');
 
       // Обновляем метаданные в background audio
       _updateBackgroundAudioMetadata(newMetadata);
 
       _notifyListeners();
     } else {
-      debugPrint('Metadata not updated: same as current');
+      debugPrint('🎵 Metadata not updated (same as current)');
     }
   }
 
@@ -530,8 +540,14 @@ class AudioPlayerService with ChangeNotifier {
     final cacheKey = '$artist|$cleanTitle';
     if (_coverCache.containsKey(cacheKey)) {
       final cachedUrl = _coverCache[cacheKey];
-      debugPrint('✅ Using cached cover for $artist - $cleanTitle: $cachedUrl');
-      return cachedUrl;
+      // ✅ ИСПРАВЛЕНИЕ: Проверяем, что кэшированный URL не пустой
+      if (cachedUrl != null && cachedUrl.isNotEmpty && cachedUrl != 'null') {
+        debugPrint('✅ Using cached cover for $artist - $cleanTitle: $cachedUrl');
+        return cachedUrl;
+      } else {
+        // Удаляем некорректную запись из кэша
+        _coverCache.remove(cacheKey);
+      }
     }
 
     final query = '${Uri.encodeComponent(artist)} ${Uri.encodeComponent(cleanTitle)}';
@@ -557,40 +573,39 @@ class AudioPlayerService with ChangeNotifier {
             final track = data['data'][0];
             final album = track['album'];
 
-            if (album != null && album['cover_big'] != null) {
-              String cover = album['cover_big'].toString();
-              
-              // Убедимся, что это полный URL
-              if (cover.startsWith('//')) {
-                cover = 'https:$cover';
-              }
-              
-              if (!cover.startsWith('http')) {
-                cover = 'https://$cover';
-              }
-              
-              _coverCache[cacheKey] = cover;
-              debugPrint('✅ Found cover from Deezer: $cover');
-              return cover;
+            String? foundCoverUrl;
+            
+            // Проверяем все возможные размеры обложки
+            if (album != null && album['cover_xl'] != null) {
+              foundCoverUrl = album['cover_xl'].toString();
+            } else if (album != null && album['cover_big'] != null) {
+              foundCoverUrl = album['cover_big'].toString();
+            } else if (album != null && album['cover_medium'] != null) {
+              foundCoverUrl = album['cover_medium'].toString();
+            } else if (album != null && album['cover_small'] != null) {
+              foundCoverUrl = album['cover_small'].toString();
             }
 
-            // Запасные варианты
-            if (album != null && album['cover_medium'] != null) {
-              String mediumCover = album['cover_medium'].toString();
-              if (mediumCover.startsWith('//')) {
-                mediumCover = 'https:$mediumCover';
+            // ✅ ИСПРАВЛЕНИЕ: Проверяем, что URL валидный
+            if (foundCoverUrl != null && foundCoverUrl.isNotEmpty) {
+              // Убедимся, что это полный URL
+              if (foundCoverUrl.startsWith('//')) {
+                foundCoverUrl = 'https:$foundCoverUrl';
+              } else if (!foundCoverUrl.startsWith('http')) {
+                foundCoverUrl = 'https://$foundCoverUrl';
               }
-              _coverCache[cacheKey] = mediumCover;
-              return mediumCover;
-            }
-            
-            if (album != null && album['cover_small'] != null) {
-              String smallCover = album['cover_small'].toString();
-              if (smallCover.startsWith('//')) {
-                smallCover = 'https:$smallCover';
+              
+              // Проверяем, что URL действительно указывает на изображение
+              if (foundCoverUrl.contains('.jpg') || 
+                  foundCoverUrl.contains('.jpeg') || 
+                  foundCoverUrl.contains('.png')) {
+                
+                _coverCache[cacheKey] = foundCoverUrl;
+                debugPrint('✅ Found cover from Deezer: $foundCoverUrl');
+                return foundCoverUrl;
+              } else {
+                debugPrint('❌ Invalid image URL format: $foundCoverUrl');
               }
-              _coverCache[cacheKey] = smallCover;
-              return smallCover;
             }
           }
         } else {
@@ -603,7 +618,14 @@ class AudioPlayerService with ChangeNotifier {
     }
 
     debugPrint('❌ No cover found for $artist - $cleanTitle');
+    // ✅ ИСПРАВЛЕНИЕ: Кэшируем null, чтобы не запрашивать снова
+    _coverCache[cacheKey] = null;
     return null;
+  }
+
+  void clearCoverCache() {
+    _coverCache.clear();
+    debugPrint('🔄 Cover cache cleared');
   }
 
   void _handleStreamMetadata(IcyMetadata? metadata) async {
@@ -615,8 +637,15 @@ class AudioPlayerService with ChangeNotifier {
       if (title != null && title.isNotEmpty && title != 'Unknown') {
         final (songTitle, artist) = _splitArtistAndTitle(title);
 
-        // Создаем временный ID для трека на основе названия и артиста
-        final trackId = '${artist}_$songTitle';
+        // Очищаем кэш для старого трека
+        if (_currentMetadata != null) {
+          final oldKey = '${_currentMetadata!.artist}|${_currentMetadata!.title}';
+          if (_coverCache.containsKey(oldKey)) {
+            _coverCache.remove(oldKey);
+          }
+        }
+
+        // Создаем уникальный ключ трека
         
         // Уведомляем handler о смене трека
         if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
@@ -625,7 +654,7 @@ class AudioPlayerService with ChangeNotifier {
           );
         }
         
-        // Создаем начальные метаданные с дефолтной обложкой
+        // Немедленно обновляем UI с дефолтной обложкой
         final initialMetadata = AudioMetadata(
           title: songTitle,
           artist: artist,
@@ -633,13 +662,16 @@ class AudioPlayerService with ChangeNotifier {
           artUrl: AudioMetadata.defaultCoverUrl,
         );
         
-        // ОБНОВЛЯЕМ: Немедленно обновляем UI с уникальным ID трека
-        updateMetadataWithId(initialMetadata, trackId);
+        updateMetadata(initialMetadata);
 
         // Асинхронно ищем лучшую обложку
         try {
+          debugPrint('🔄 Searching cover for: $artist - $songTitle');
           final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
-          if (artUrl != null && artUrl.isNotEmpty) {
+          
+          if (artUrl != null && artUrl.isNotEmpty && artUrl != AudioMetadata.defaultCoverUrl) {
+            debugPrint('✅ Found cover: $artUrl');
+            
             final updatedMetadata = AudioMetadata(
               title: songTitle,
               artist: artist,
@@ -647,19 +679,19 @@ class AudioPlayerService with ChangeNotifier {
               artUrl: artUrl,
             );
             
-            // ОБНОВЛЯЕМ: Обновляем с новой обложкой, используя тот же ID трека
-            updateMetadataWithId(updatedMetadata, trackId);
-            
-            // Принудительное обновление для iOS
-            if (defaultTargetPlatform == TargetPlatform.iOS) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
+            // Обновляем с новой обложкой
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              updateMetadata(updatedMetadata);
+              
+              // Принудительное обновление для iOS
+              if (defaultTargetPlatform == TargetPlatform.iOS) {
                 if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
                   (_audioHandler as AudioPlayerHandler).forceUpdateMediaItem();
                 }
-              });
-            }
+              }
+            });
           } else {
-            debugPrint('❌ No cover found for $artist - $songTitle');
+            debugPrint('⚠️ No cover found or default cover used');
           }
         } catch (e) {
           debugPrint('❌ Error fetching cover from Deezer: $e');
