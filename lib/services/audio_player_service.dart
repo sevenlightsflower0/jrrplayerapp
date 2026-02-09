@@ -28,19 +28,6 @@ class AudioMetadata {
     String? artUrl,
   }) : artUrl = artUrl ?? defaultCoverUrl;
 
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other.runtimeType != runtimeType) return false;
-    return other is AudioMetadata &&
-        title == other.title &&
-        artist == other.artist &&
-        album == other.album &&  // Bare access - remove 'this.'
-        artUrl == other.artUrl;
-  }
-
-  @override
-  int get hashCode => Object.hash(title, artist, album, artUrl);  // Bare access here too
 
   @override
   String toString() {
@@ -353,8 +340,16 @@ class AudioPlayerService with ChangeNotifier {
 
   void updateMetadata(AudioMetadata newMetadata) {
     debugPrint('Updating metadata: ${newMetadata.title}');
+    debugPrint('Current artUrl: ${_currentMetadata?.artUrl}');
+    debugPrint('New artUrl: ${newMetadata.artUrl}');
 
-    if (_currentMetadata == null || _currentMetadata != newMetadata) {
+    // Вместо сравнения через ==, сравниваем только ключевые поля
+    bool shouldUpdate = _currentMetadata == null ||
+        _currentMetadata!.title != newMetadata.title ||
+        _currentMetadata!.artist != newMetadata.artist ||
+        _currentMetadata!.artUrl != newMetadata.artUrl;
+
+    if (shouldUpdate) {
       _currentMetadata = newMetadata;
       debugPrint('Metadata updated: ${newMetadata.title}');
 
@@ -362,9 +357,11 @@ class AudioPlayerService with ChangeNotifier {
       _updateBackgroundAudioMetadata(newMetadata);
 
       _notifyListeners();
+    } else {
+      debugPrint('Metadata not updated: same as current');
     }
   }
-    
+
   String getPreparedArtUrl(String? rawArtUrl) {
     if (rawArtUrl == null || rawArtUrl.isEmpty) {
       // Для дефолтной обложки всегда используем asset путь
@@ -618,6 +615,9 @@ class AudioPlayerService with ChangeNotifier {
       if (title != null && title.isNotEmpty && title != 'Unknown') {
         final (songTitle, artist) = _splitArtistAndTitle(title);
 
+        // Создаем временный ID для трека на основе названия и артиста
+        final trackId = '${artist}_$songTitle';
+        
         // Уведомляем handler о смене трека
         if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
           (_audioHandler as AudioPlayerHandler).refreshArtUriForNewTrack(
@@ -625,9 +625,7 @@ class AudioPlayerService with ChangeNotifier {
           );
         }
         
-        // Ключевое изменение: Создаем уникальный ID для каждого трека
-        
-        // Создаем метаданные с уникальным ID
+        // Создаем начальные метаданные с дефолтной обложкой
         final initialMetadata = AudioMetadata(
           title: songTitle,
           artist: artist,
@@ -635,33 +633,63 @@ class AudioPlayerService with ChangeNotifier {
           artUrl: AudioMetadata.defaultCoverUrl,
         );
         
-        // Немедленно обновляем UI
-        updateMetadata(initialMetadata);
+        // ОБНОВЛЯЕМ: Немедленно обновляем UI с уникальным ID трека
+        updateMetadataWithId(initialMetadata, trackId);
 
         // Асинхронно ищем лучшую обложку
-        final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
-        if (artUrl != null) {
-          final updatedMetadata = AudioMetadata(
-            title: songTitle,
-            artist: artist,
-            album: 'J-Rock Radio',
-            artUrl: artUrl,
-          );
-          
-          // Снова обновляем с найденной обложкой
-          updateMetadata(updatedMetadata);
-          
-          // Принудительное обновление для iOS
-          if (defaultTargetPlatform == TargetPlatform.iOS) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
-                (_audioHandler as AudioPlayerHandler).forceUpdateMediaItem();
-              }
-            });
+        try {
+          final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
+          if (artUrl != null && artUrl.isNotEmpty) {
+            final updatedMetadata = AudioMetadata(
+              title: songTitle,
+              artist: artist,
+              album: 'J-Rock Radio',
+              artUrl: artUrl,
+            );
+            
+            // ОБНОВЛЯЕМ: Обновляем с новой обложкой, используя тот же ID трека
+            updateMetadataWithId(updatedMetadata, trackId);
+            
+            // Принудительное обновление для iOS
+            if (defaultTargetPlatform == TargetPlatform.iOS) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+                  (_audioHandler as AudioPlayerHandler).forceUpdateMediaItem();
+                }
+              });
+            }
+          } else {
+            debugPrint('❌ No cover found for $artist - $songTitle');
           }
+        } catch (e) {
+          debugPrint('❌ Error fetching cover from Deezer: $e');
         }
       }
     }
+  }
+
+  // Добавьте этот новый метод в класс AudioPlayerService
+  void updateMetadataWithId(AudioMetadata metadata, String trackId) {
+    debugPrint('🎵 Updating metadata with ID $trackId: ${metadata.title}');
+    
+    // Создаем копию метаданных с уникальным ID в extras
+    final metadataWithId = AudioMetadata(
+      title: metadata.title,
+      artist: metadata.artist,
+      album: metadata.album,
+      artUrl: metadata.artUrl,
+    );
+    
+    // Обновляем метаданные
+    _currentMetadata = metadataWithId;
+    
+    // Обновляем метаданные в background audio
+    _updateBackgroundAudioMetadata(metadataWithId);
+
+    // Принудительно уведомляем слушателей
+    _notifyListeners();
+    
+    debugPrint('✅ Metadata updated with artUrl: ${metadata.artUrl}');
   }
 
   (String, String) _splitArtistAndTitle(String fullTitle) {
