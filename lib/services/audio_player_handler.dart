@@ -188,41 +188,80 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  void forceUpdateMediaItem() {
+    void forceUpdateMediaItem() {
+      if (_currentMediaItem != null) {
+        // Создаем копию с полностью новым extras
+        MediaItem updatedItem = MediaItem(
+          id: _currentMediaItem!.id,
+          title: _currentMediaItem!.title,
+          artist: _currentMediaItem!.artist!,
+          album: _currentMediaItem!.album ?? 'J-Rock Radio',
+          artUri: _currentMediaItem!.artUri,
+          duration: _currentMediaItem!.duration,
+          extras: {
+            ..._currentMediaItem!.extras ?? {},
+            'forceUpdate': DateTime.now().millisecondsSinceEpoch,
+            'updatedAt': DateTime.now().toIso8601String(),
+          },
+        );
+        
+        _currentMediaItem = updatedItem;
+        mediaItem.add(_currentMediaItem!);
+        
+        debugPrint('🔄 [Handler] Force updated MediaItem with artUri: ${_currentMediaItem!.artUri}');
+        
+        // Для iOS дополнительно обновляем состояние
+        if (defaultTargetPlatform == TargetPlatform.iOS) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            playbackState.add(playbackState.value.copyWith(
+              updatePosition: playbackState.value.position,
+            ));
+          });
+        }
+        
+        // Для Android также принудительно обновляем состояние
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final currentState = playbackState.value;
+            playbackState.add(currentState.copyWith(
+              updatePosition: currentState.position,
+              bufferedPosition: currentState.bufferedPosition,
+            ));
+          });
+        }
+      }
+    }
+    Future<void> forceUpdateCover(String artUrl) async {
+    debugPrint('🔄 [Handler] Force updating cover: $artUrl');
+    
     if (_currentMediaItem != null) {
-      // Создаем копию с полностью новым extras
+      // Получаем новый artUri
+      Uri? newArtUri = _getArtUriForPlatform(artUrl);
+      
+      // Создаем обновленный MediaItem с новым artUri
       MediaItem updatedItem = MediaItem(
         id: _currentMediaItem!.id,
         title: _currentMediaItem!.title,
         artist: _currentMediaItem!.artist!,
         album: _currentMediaItem!.album ?? 'J-Rock Radio',
-        artUri: _currentMediaItem!.artUri,
+        artUri: newArtUri,
         duration: _currentMediaItem!.duration,
         extras: {
           ..._currentMediaItem!.extras ?? {},
-          'forceUpdate': DateTime.now().millisecondsSinceEpoch,
-          'updatedAt': DateTime.now().toIso8601String(),
+          'forceCoverUpdate': DateTime.now().millisecondsSinceEpoch,
+          'originalArtUrl': artUrl,
         },
       );
       
       _currentMediaItem = updatedItem;
       mediaItem.add(_currentMediaItem!);
       
-      debugPrint('🔄 Force updated MediaItem with artUri: ${_currentMediaItem!.artUri}');
-      
-      // Для iOS дополнительно обновляем состояние
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          playbackState.add(playbackState.value.copyWith(
-            updatePosition: playbackState.value.position,
-          ));
-        });
-      }
+      debugPrint('✅ [Handler] Cover force updated to: $newArtUri');
     }
   }
 
   Future<void> updateMetadata(AudioMetadata metadata) async {
-    debugPrint('🎵 updateMetadata called with raw artUrl: ${metadata.artUrl}');
+    debugPrint('🎵 [Handler] updateMetadata called with raw artUrl: ${metadata.artUrl}');
 
     Duration? duration;
     if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
@@ -231,15 +270,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
     // Получаем подготовленный URL
     String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
-    debugPrint('🎵 Prepared artUrl: $preparedArtUrl');
+    debugPrint('🎵 [Handler] Prepared artUrl: $preparedArtUrl');
     
     // Для радио используем фиксированный ID для лучшей стабильности в уведомлениях
     String mediaId;
     bool isRadio = metadata.artist == 'Live Stream' || !audioPlayerService.isPodcastMode;
     
     if (isRadio) {
-      // Для радио используем фиксированный ID
-      mediaId = 'jrr_live_stream';
+      // Для радио используем фиксированный ID, но добавляем временную метку для уникальности
+      mediaId = 'jrr_live_stream_${DateTime.now().millisecondsSinceEpoch}';
     } else {
       // Для подкастов используем ID эпизода
       mediaId = 'podcast_${audioPlayerService.currentEpisode?.id ?? DateTime.now().millisecondsSinceEpoch}';
@@ -263,6 +302,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         'artUrlPrepared': preparedArtUrl,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'isRadio': isRadio,
+        'forceUpdate': DateTime.now().millisecondsSinceEpoch, // Добавляем для принудительного обновления
       },
     );
 
@@ -280,30 +320,37 @@ class AudioPlayerHandler extends BaseAudioHandler {
       updatePlaybackState(player.playing);
     }
     
-    debugPrint('🎵 MediaItem updated with artUri: ${_currentMediaItem!.artUri}');
-    debugPrint('🎵 MediaItem ID: ${_currentMediaItem!.id}');
+    debugPrint('🎵 [Handler] MediaItem updated with artUri: ${_currentMediaItem!.artUri}');
+    debugPrint('🎵 [Handler] MediaItem ID: ${_currentMediaItem!.id}');
     
-    // Для iOS дополнительно вызываем forceUpdateMediaItem
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        forceUpdateMediaItem();
-      });
-    }
+    // ДЛЯ ВСЕХ ПЛАТФОРМ: вызываем forceUpdateMediaItem для гарантированного обновления
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      forceUpdateMediaItem();
+    });
   }
 
   final Map<String, Uri> _artUriCache = {}; // Оставьте эту строку
 
   Uri? _getArtUriForPlatform(String artUrl) {
-    // Проверка кэша
-    if (_artUriCache.containsKey(artUrl)) {
-      return _artUriCache[artUrl];
+    // Добавляем временную метку к URL для предотвращения кэширования
+    String cacheBusterArtUrl = artUrl;
+    
+    if (!artUrl.contains('?') && 
+        (artUrl.startsWith('http://') || artUrl.startsWith('https://'))) {
+      // Добавляем параметр для предотвращения кэширования
+      cacheBusterArtUrl = '$artUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+    }
+    
+    // Проверка кэша (с новым URL)
+    if (_artUriCache.containsKey(cacheBusterArtUrl)) {
+      return _artUriCache[cacheBusterArtUrl];
     }
     
     // Исправьте сравнение - проверяем, является ли это дефолтной обложкой
     if (artUrl.isEmpty || 
         artUrl == 'assets/images/default_cover.png' || 
         artUrl == AudioMetadata.defaultCoverUrl) {
-      _artUriCache[artUrl] = _defaultArtUri;
+      _artUriCache[cacheBusterArtUrl] = _defaultArtUri;
       return _defaultArtUri;
     }
 
@@ -313,7 +360,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       // Для iOS: особый случай для asset путей
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-          result = Uri.parse(artUrl);
+          result = Uri.parse(cacheBusterArtUrl);
         } else if (artUrl.startsWith('assets/')) {
           // iOS ожидает: asset:///FlutterAssets/assets/...
           result = Uri.parse('asset:///FlutterAssets/$artUrl');
@@ -326,7 +373,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       } else {
         // Для Android и других платформ
         if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-          result = Uri.parse(artUrl);
+          result = Uri.parse(cacheBusterArtUrl);
         } else if (artUrl.startsWith('assets/')) {
           // Android ожидает: asset:///assets/...
           result = Uri.parse('asset:///$artUrl');
@@ -338,11 +385,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
         }
       }
       
-      _artUriCache[artUrl] = result;
+      _artUriCache[cacheBusterArtUrl] = result;
       return result;
     } catch (e) {
       debugPrint('❌ Error creating artUri for $artUrl: $e');
-      _artUriCache[artUrl] = _defaultArtUri;
+      _artUriCache[cacheBusterArtUrl] = _defaultArtUri;
       return _defaultArtUri;
     }
   }

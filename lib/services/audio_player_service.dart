@@ -339,18 +339,25 @@ class AudioPlayerService with ChangeNotifier {
   // ==================== Web Metadata Handling ====================
 
   void updateMetadata(AudioMetadata newMetadata) {
-    debugPrint('🎵 updateMetadata called with raw artUrl: ${newMetadata.artUrl}');
-    debugPrint('🎵 Title: ${newMetadata.title}, Artist: ${newMetadata.artist}');
+    debugPrint('🎵 [Service] updateMetadata called with raw artUrl: ${newMetadata.artUrl}');
+    debugPrint('🎵 [Service] Title: ${newMetadata.title}, Artist: ${newMetadata.artist}');
 
-    // Всегда обновляем метаданные для радио
+    // Для радио всегда обновляем метаданные, даже если они кажутся одинаковыми, 
+    // потому что обложка могла измениться (дефолтная -> найденная)
     if (!_isPodcastMode) {
       _currentMetadata = newMetadata;
-      debugPrint('🎵 Radio metadata updated with artUrl: ${newMetadata.artUrl}');
+      debugPrint('🎵 [Service] Radio metadata updated with artUrl: ${newMetadata.artUrl}');
 
       // Обновляем метаданные в background audio
       _updateBackgroundAudioMetadata(newMetadata);
 
-      _notifyListeners();
+      // Принудительно уведомляем слушателей
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) {
+          notifyListeners();
+          debugPrint('🎵 [Service] Listeners notified');
+        }
+      });
       return;
     }
 
@@ -361,14 +368,14 @@ class AudioPlayerService with ChangeNotifier {
         _currentMetadata!.artUrl != newMetadata.artUrl) {
       
       _currentMetadata = newMetadata;
-      debugPrint('🎵 Podcast metadata updated with artUrl: ${newMetadata.artUrl}');
+      debugPrint('🎵 [Service] Podcast metadata updated with artUrl: ${newMetadata.artUrl}');
 
       // Обновляем метаданные в background audio
       _updateBackgroundAudioMetadata(newMetadata);
 
       _notifyListeners();
     } else {
-      debugPrint('🎵 Metadata not updated (same as current)');
+      debugPrint('🎵 [Service] Metadata not updated (same as current)');
     }
   }
 
@@ -399,6 +406,35 @@ class AudioPlayerService with ChangeNotifier {
     } else {
       // Предполагаем, что это имя файла в assets/images
       return 'asset:///assets/images/$rawArtUrl';
+    }
+  }
+
+  void updateCoverOnly(String newArtUrl) {
+    if (_currentMetadata != null && _audioHandler != null) {
+      debugPrint('🔄 [Service] Updating cover only: $newArtUrl');
+      
+      // Создаем новые метаданные с обновленной обложкой
+      final updatedMetadata = AudioMetadata(
+        title: _currentMetadata!.title,
+        artist: _currentMetadata!.artist,
+        album: _currentMetadata!.album,
+        artUrl: newArtUrl,
+      );
+      
+      // Обновляем локально
+      _currentMetadata = updatedMetadata;
+      
+      // Обновляем в background audio
+      _updateBackgroundAudioMetadata(updatedMetadata);
+      
+      // Принудительно обновляем уведомление
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+          (_audioHandler as AudioPlayerHandler).forceUpdateCover(newArtUrl);
+        }
+      });
+      
+      _notifyListeners();
     }
   }
 
@@ -703,9 +739,6 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   void _handleStreamMetadata(IcyMetadata? metadata) async {
-    debugPrint('🎵 ===== ICY METADATA CALLED =====');
-    debugPrint('🎵 Metadata raw: $metadata');
-    
     if (_isPodcastMode) return;
     if (kIsWeb) return;
 
@@ -713,25 +746,10 @@ class AudioPlayerService with ChangeNotifier {
       final title = metadata.info!.title?.trim();
       if (title != null && title.isNotEmpty && title != 'Unknown') {
         final (songTitle, artist) = _splitArtistAndTitle(title);
-
-        // Очищаем кэш для старого трека
-        if (_currentMetadata != null) {
-          final oldKey = '${_currentMetadata!.artist}|${_currentMetadata!.title}';
-          if (_coverCache.containsKey(oldKey)) {
-            _coverCache.remove(oldKey);
-          }
-        }
-
-        // Создаем уникальный ключ трека
         
-        // Уведомляем handler о смене трека
-        if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
-          (_audioHandler as AudioPlayerHandler).refreshArtUriForNewTrack(
-            AudioMetadata.defaultCoverUrl
-          );
-        }
-        
-        // Немедленно обновляем UI с дефолтной обложкой
+        debugPrint('🎵 New track detected: $artist - $songTitle');
+
+        // Сначала обновляем с дефолтной обложкой
         final initialMetadata = AudioMetadata(
           title: songTitle,
           artist: artist,
@@ -741,38 +759,29 @@ class AudioPlayerService with ChangeNotifier {
         
         updateMetadata(initialMetadata);
 
-        // Асинхронно ищем лучшую обложку
-        try {
-          debugPrint('🔄 Searching cover for: $artist - $songTitle');
-          final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
-          
-          if (artUrl != null && artUrl.isNotEmpty && artUrl != AudioMetadata.defaultCoverUrl) {
-            debugPrint('✅ Found cover: $artUrl');
+        // Затем асинхронно ищем и обновляем обложку
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          try {
+            debugPrint('🔄 Searching cover for: $artist - $songTitle');
+            final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
             
-            final updatedMetadata = AudioMetadata(
-              title: songTitle,
-              artist: artist,
-              album: 'J-Rock Radio',
-              artUrl: artUrl,
-            );
-            
-            // Обновляем с новой обложкой
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              updateMetadata(updatedMetadata);
+            if (artUrl != null && artUrl.isNotEmpty) {
+              debugPrint('✅ Found cover, updating: $artUrl');
               
-              // Принудительное обновление для iOS
-              if (defaultTargetPlatform == TargetPlatform.iOS) {
-                if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+              // Обновляем только обложку, не меняя другие метаданные
+              updateCoverOnly(artUrl);
+              
+              // Дополнительно принудительно обновляем MediaItem
+              if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
                   (_audioHandler as AudioPlayerHandler).forceUpdateMediaItem();
-                }
+                });
               }
-            });
-          } else {
-            debugPrint('⚠️ No cover found or default cover used');
+            }
+          } catch (e) {
+            debugPrint('❌ Error updating cover: $e');
           }
-        } catch (e) {
-          debugPrint('❌ Error fetching cover from Deezer: $e');
-        }
+        });
       }
     }
   }
