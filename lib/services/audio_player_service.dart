@@ -540,18 +540,26 @@ class AudioPlayerService with ChangeNotifier {
     final cacheKey = '$artist|$cleanTitle';
     if (_coverCache.containsKey(cacheKey)) {
       final cachedUrl = _coverCache[cacheKey];
-      // ✅ ИСПРАВЛЕНИЕ: Проверяем, что кэшированный URL не пустой
       if (cachedUrl != null && cachedUrl.isNotEmpty && cachedUrl != 'null') {
         debugPrint('✅ Using cached cover for $artist - $cleanTitle: $cachedUrl');
         return cachedUrl;
       } else {
-        // Удаляем некорректную запись из кэша
         _coverCache.remove(cacheKey);
       }
     }
 
     final query = '${Uri.encodeComponent(artist)} ${Uri.encodeComponent(cleanTitle)}';
-    final urls = AppStrings.getDeezerApiUrls(query);
+    
+    // ✅ ИСПРАВЛЕНИЕ: Для Android используем прямой запрос к Deezer API
+    List<String> urls;
+    
+    if (kIsWeb) {
+      // Для веба используем прокси-сервисы
+      urls = AppStrings.getDeezerApiUrls(query);
+    } else {
+      // Для Android/iOS используем прямой запрос к Deezer API
+      urls = ['https://api.deezer.com/search?q=$query&limit=1'];
+    }
 
     debugPrint('🔍 Searching Deezer for: $artist - $cleanTitle');
 
@@ -559,19 +567,30 @@ class AudioPlayerService with ChangeNotifier {
       try {
         debugPrint('🌐 Trying Deezer API: $url');
 
+        // ✅ ИСПРАВЛЕНИЕ: Добавляем правильные заголовки для Deezer API
+        Map<String, String> headers = {
+          'User-Agent': 'Deezer/8.0 (Android; 11; Mobile)',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9',
+        };
+
         final response = await http.get(
           Uri.parse(url),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
+          headers: headers,
         ).timeout(const Duration(seconds: 10));
 
+        debugPrint('🎵 Deezer API status: ${response.statusCode}');
+        
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
+          debugPrint('🎵 Deezer response data keys: ${data.keys}');
 
           if (data['data'] != null && data['data'].isNotEmpty) {
             final track = data['data'][0];
+            debugPrint('🎵 Track found: ${track['title']}');
+            
             final album = track['album'];
+            debugPrint('🎵 Album data: $album');
 
             String? foundCoverUrl;
             
@@ -586,7 +605,7 @@ class AudioPlayerService with ChangeNotifier {
               foundCoverUrl = album['cover_small'].toString();
             }
 
-            // ✅ ИСПРАВЛЕНИЕ: Проверяем, что URL валидный
+            // Проверяем, что URL валидный
             if (foundCoverUrl != null && foundCoverUrl.isNotEmpty) {
               // Убедимся, что это полный URL
               if (foundCoverUrl.startsWith('//')) {
@@ -606,10 +625,16 @@ class AudioPlayerService with ChangeNotifier {
               } else {
                 debugPrint('❌ Invalid image URL format: $foundCoverUrl');
               }
+            } else {
+              debugPrint('❌ No cover URL found in album data');
             }
+          } else {
+            debugPrint('❌ No tracks found in Deezer response');
+            debugPrint('🎵 Response data: ${data['data']}');
           }
         } else {
           debugPrint('❌ Deezer API returned status: ${response.statusCode}');
+          debugPrint('🎵 Response body: ${response.body}');
         }
       } catch (e) {
         debugPrint('⚠️ Deezer API $url failed: $e');
@@ -617,9 +642,58 @@ class AudioPlayerService with ChangeNotifier {
       }
     }
 
+    // Если Deezer не нашел обложку, попробуем Last.fm
+    if (!kIsWeb) { // Только для мобильных
+      debugPrint('🎵 Trying Last.fm as fallback...');
+      final lastFmCover = await _fetchCoverFromLastFM(title, artist);
+      if (lastFmCover != null) {
+        _coverCache[cacheKey] = lastFmCover;
+        return lastFmCover;
+      }
+    }  
+
     debugPrint('❌ No cover found for $artist - $cleanTitle');
-    // ✅ ИСПРАВЛЕНИЕ: Кэшируем null, чтобы не запрашивать снова
+    // Кэшируем null, чтобы не запрашивать снова
     _coverCache[cacheKey] = null;
+    return null;
+  }
+
+  // Добавьте этот метод в AudioPlayerService
+  Future<String?> _fetchCoverFromLastFM(String title, String artist) async {
+    try {
+      final url = 'https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=YOUR_LASTFM_API_KEY&artist=${Uri.encodeComponent(artist)}&track=${Uri.encodeComponent(title)}&format=json';
+      
+      debugPrint('🎵 Trying Last.fm API for: $artist - $title');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'User-Agent': 'J-Rock Radio/1.0'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['track'] != null && data['track']['album'] != null) {
+          final images = data['track']['album']['image'];
+          if (images != null && images.isNotEmpty) {
+            // Ищем изображение максимального размера
+            String? coverUrl;
+            for (var image in images.reversed) {
+              if (image['#text'] != null && image['#text'].isNotEmpty) {
+                coverUrl = image['#text'];
+                break;
+              }
+            }
+            
+            if (coverUrl != null && coverUrl.isNotEmpty) {
+              debugPrint('✅ Found cover from Last.fm: $coverUrl');
+              return coverUrl;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Last.fm API failed: $e');
+    }
     return null;
   }
 
@@ -629,6 +703,9 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   void _handleStreamMetadata(IcyMetadata? metadata) async {
+    debugPrint('🎵 ===== ICY METADATA CALLED =====');
+    debugPrint('🎵 Metadata raw: $metadata');
+    
     if (_isPodcastMode) return;
     if (kIsWeb) return;
 
@@ -725,6 +802,8 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   (String, String) _splitArtistAndTitle(String fullTitle) {
+    debugPrint('🎵 Splitting title: "$fullTitle"');
+    
     final separators = [' - ', ' – ', ' — ', ' • ', ' | ', ' ~ '];
 
     for (final separator in separators) {
@@ -734,6 +813,8 @@ class AudioPlayerService with ChangeNotifier {
           String artist = parts[0].trim();
           String title = parts.sublist(1).join(separator).trim();
 
+          debugPrint('🎵 Split with "$separator": Artist="$artist", Title="$title"');
+          
           // Иногда порядок может быть обратным: Title - Artist
           // Проверяем, если в первой части есть типичные слова для названия трека
           if (_looksLikeTitle(artist) && !_looksLikeTitle(title)) {
@@ -741,6 +822,7 @@ class AudioPlayerService with ChangeNotifier {
             final temp = artist;
             artist = title;
             title = temp;
+            debugPrint('🎵 Swapped: Artist="$artist", Title="$title"');
           }
 
           return (title, artist);
@@ -752,10 +834,12 @@ class AudioPlayerService with ChangeNotifier {
     if (fullTitle.contains(' by ')) {
       final parts = fullTitle.split(' by ');
       if (parts.length == 2) {
+        debugPrint('🎵 Split with "by": Artist="${parts[1].trim()}", Title="${parts[0].trim()}"');
         return (parts[0].trim(), parts[1].trim());
       }
     }
 
+    debugPrint('🎵 No separator found, using full title as title');
     return (fullTitle, 'J-Rock Radio');
   }
 
