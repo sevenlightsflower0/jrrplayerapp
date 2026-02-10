@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:jrrplayerapp/constants/strings.dart';
 import 'package:jrrplayerapp/repositories/podcast_repository.dart';
 import 'package:just_audio/just_audio.dart';
@@ -35,7 +36,7 @@ class AudioMetadata {
   }
 }
 
-class AudioPlayerService with ChangeNotifier {
+class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
   factory AudioPlayerService() => _instance;
   AudioPlayerService._internal();
@@ -77,6 +78,24 @@ class AudioPlayerService with ChangeNotifier {
 
   Stream<bool> get playbackStateStream => _playbackStateController.stream;
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    debugPrint('🎵 App lifecycle state changed: $state');
+    
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        setAppInBackground(true);
+        break;
+      case AppLifecycleState.resumed:
+        setAppInBackground(false);
+        break;
+      default:
+        break;
+    }
+  }
+  
   // Добавьте этот геттер
   AudioHandler? get audioHandler => _audioHandler;
 
@@ -584,9 +603,18 @@ class AudioPlayerService with ChangeNotifier {
       }
     }
 
+    // ✅ ИСПРАВЛЕНИЕ: В фоновом режиме используем только кэш или очень быстрые запросы
+    bool isInBackground = await _isAppInBackground();
+    
+    if (isInBackground) {
+      debugPrint('📱 App is in background, using cache only for cover search');
+      // В фоновом режиме не делаем запросы, только используем кэш
+      return null;
+    }
+
     final query = '${Uri.encodeComponent(artist)} ${Uri.encodeComponent(cleanTitle)}';
     
-    // ✅ ИСПРАВЛЕНИЕ: Для Android используем прямой запрос к Deezer API
+    // ✅ ИСПРАВЛЕНИЕ: Используем только один самый быстрый URL в фоновом режиме
     List<String> urls;
     
     if (kIsWeb) {
@@ -603,7 +631,7 @@ class AudioPlayerService with ChangeNotifier {
       try {
         debugPrint('🌐 Trying Deezer API: $url');
 
-        // ✅ ИСПРАВЛЕНИЕ: Добавляем правильные заголовки для Deezer API
+        // ✅ ИСПРАВЛЕНИЕ: В фоновом режиме уменьшаем таймаут
         Map<String, String> headers = {
           'User-Agent': 'Deezer/8.0 (Android; 11; Mobile)',
           'Accept': 'application/json',
@@ -613,7 +641,7 @@ class AudioPlayerService with ChangeNotifier {
         final response = await http.get(
           Uri.parse(url),
           headers: headers,
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(isInBackground ? const Duration(seconds: 3) : const Duration(seconds: 10));
 
         debugPrint('🎵 Deezer API status: ${response.statusCode}');
         
@@ -666,27 +694,18 @@ class AudioPlayerService with ChangeNotifier {
             }
           } else {
             debugPrint('❌ No tracks found in Deezer response');
-            debugPrint('🎵 Response data: ${data['data']}');
           }
         } else {
           debugPrint('❌ Deezer API returned status: ${response.statusCode}');
-          debugPrint('🎵 Response body: ${response.body}');
         }
       } catch (e) {
         debugPrint('⚠️ Deezer API $url failed: $e');
+        
+        // ✅ ИСПРАВЛЕНИЕ: В фоновом режиме не перебираем все URL, чтобы экономить время
+        if (isInBackground) break;
         continue;
       }
     }
-
-    // Если Deezer не нашел обложку, попробуем Last.fm
-    if (!kIsWeb) { // Только для мобильных
-      debugPrint('🎵 Trying Last.fm as fallback...');
-      final lastFmCover = await _fetchCoverFromLastFM(title, artist);
-      if (lastFmCover != null) {
-        _coverCache[cacheKey] = lastFmCover;
-        return lastFmCover;
-      }
-    }  
 
     debugPrint('❌ No cover found for $artist - $cleanTitle');
     // Кэшируем null, чтобы не запрашивать снова
@@ -695,42 +714,24 @@ class AudioPlayerService with ChangeNotifier {
   }
 
   // Добавьте этот метод в AudioPlayerService
-  Future<String?> _fetchCoverFromLastFM(String title, String artist) async {
-    try {
-      final url = 'https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=YOUR_LASTFM_API_KEY&artist=${Uri.encodeComponent(artist)}&track=${Uri.encodeComponent(title)}&format=json';
-      
-      debugPrint('🎵 Trying Last.fm API for: $artist - $title');
-      
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'User-Agent': 'J-Rock Radio/1.0'},
-      ).timeout(const Duration(seconds: 10));
+  
+  bool _isInBackground = false;
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['track'] != null && data['track']['album'] != null) {
-          final images = data['track']['album']['image'];
-          if (images != null && images.isNotEmpty) {
-            // Ищем изображение максимального размера
-            String? coverUrl;
-            for (var image in images.reversed) {
-              if (image['#text'] != null && image['#text'].isNotEmpty) {
-                coverUrl = image['#text'];
-                break;
-              }
-            }
-            
-            if (coverUrl != null && coverUrl.isNotEmpty) {
-              debugPrint('✅ Found cover from Last.fm: $coverUrl');
-              return coverUrl;
-            }
-          }
-        }
-      }
+  Future<bool> _isAppInBackground() async {
+    try {
+      // Используем MethodChannel для проверки состояния приложения
+      const platform = MethodChannel('com.jrrplayerapp/app_lifecycle');
+      final bool result = await platform.invokeMethod('isInBackground') ?? false;
+      return result;
     } catch (e) {
-      debugPrint('⚠️ Last.fm API failed: $e');
+      debugPrint('Error checking app state: $e');
+      return _isInBackground;
     }
-    return null;
+  }
+
+  void setAppInBackground(bool inBackground) {
+    _isInBackground = inBackground;
+    debugPrint('📱 App background state changed: $inBackground');
   }
 
   void clearCoverCache() {
@@ -1776,6 +1777,8 @@ class AudioPlayerService with ChangeNotifier {
 
     await _audioHandler?.stop();
     _audioHandler = null;
+
+    WidgetsBinding.instance.removeObserver(this as WidgetsBindingObserver);
 
     super.dispose();
 
