@@ -616,13 +616,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
 
     // ✅ ИСПРАВЛЕНИЕ: В фоновом режиме используем только кэш или очень быстрые запросы
     bool isInBackground = await _isAppInBackground();
-    
-    if (isInBackground) {
-      debugPrint('📱 App is in background, using cache only for cover search');
-      // В фоновом режиме не делаем запросы, только используем кэш
-      return null;
-    }
-
+ 
     final query = '${Uri.encodeComponent(artist)} ${Uri.encodeComponent(cleanTitle)}';
     
     // ✅ ИСПРАВЛЕНИЕ: Используем только один самый быстрый URL в фоновом режиме
