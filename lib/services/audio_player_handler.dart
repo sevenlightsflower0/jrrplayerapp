@@ -139,78 +139,77 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-    void forceUpdateMediaItem() {
-      if (_currentMediaItem != null) {
-        // Создаем копию с полностью новым extras
-        MediaItem updatedItem = MediaItem(
-          id: _currentMediaItem!.id,
-          title: _currentMediaItem!.title,
-          artist: _currentMediaItem!.artist!,
-          album: _currentMediaItem!.album ?? 'J-Rock Radio',
-          artUri: _currentMediaItem!.artUri,
-          duration: _currentMediaItem!.duration,
-          extras: {
-            ..._currentMediaItem!.extras ?? {},
-            'forceUpdate': DateTime.now().millisecondsSinceEpoch,
-            'updatedAt': DateTime.now().toIso8601String(),
-          },
-        );
-        
-        _currentMediaItem = updatedItem;
-        mediaItem.add(_currentMediaItem!);
-        
-        debugPrint('🔄 [Handler] Force updated MediaItem with artUri: ${_currentMediaItem!.artUri}');
-        
-        // Для iOS дополнительно обновляем состояние
-        if (defaultTargetPlatform == TargetPlatform.iOS) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            playbackState.add(playbackState.value.copyWith(
-              updatePosition: playbackState.value.position,
-            ));
-          });
-        }
-        
-        // Для Android также принудительно обновляем состояние
-        if (defaultTargetPlatform == TargetPlatform.android) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            final currentState = playbackState.value;
-            playbackState.add(currentState.copyWith(
-              updatePosition: currentState.position,
-              bufferedPosition: currentState.bufferedPosition,
-            ));
-          });
-        }
-      }
-    }
-
-    Future<void> forceUpdateCover(String artUrl) async {
-      debugPrint('🔄 [Handler] Force updating cover: $artUrl');
+  void forceUpdateMediaItem() {
+    if (_currentMediaItem != null) {
+      // Создаем копию с полностью новым extras
+      MediaItem updatedItem = MediaItem(
+        id: _currentMediaItem!.id,
+        title: _currentMediaItem!.title,
+        artist: _currentMediaItem!.artist!,
+        album: _currentMediaItem!.album ?? 'J-Rock Radio',
+        artUri: _currentMediaItem!.artUri,
+        duration: _currentMediaItem!.duration,
+        extras: {
+          ..._currentMediaItem!.extras ?? {},
+          'forceUpdate': DateTime.now().millisecondsSinceEpoch,
+          'updatedAt': DateTime.now().toIso8601String(),
+        },
+      );
       
-      if (_currentMediaItem != null) {
-        // Получаем новый artUri
-        Uri? newArtUri = _getArtUriForPlatform(artUrl);
-        
-        // Создаем обновленный MediaItem с новым artUri
-        MediaItem updatedItem = MediaItem(
-          id: _currentMediaItem!.id,
-          title: _currentMediaItem!.title,
-          artist: _currentMediaItem!.artist!,
-          album: _currentMediaItem!.album ?? 'J-Rock Radio',
-          artUri: newArtUri,
-          duration: _currentMediaItem!.duration,
-          extras: {
-            ..._currentMediaItem!.extras ?? {},
-            'forceCoverUpdate': DateTime.now().millisecondsSinceEpoch,
-            'originalArtUrl': artUrl,
-          },
-        );
-        
-        _currentMediaItem = updatedItem;
-        mediaItem.add(_currentMediaItem!);
-        
-        debugPrint('✅ [Handler] Cover force updated to: $newArtUri');
+      _currentMediaItem = updatedItem;
+      mediaItem.add(_currentMediaItem!);
+      
+      debugPrint('🔄 [Handler] Force updated MediaItem with artUri: ${_currentMediaItem!.artUri}');
+      
+      // Для iOS дополнительно обновляем состояние
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          playbackState.add(playbackState.value.copyWith(
+            updatePosition: playbackState.value.position,
+          ));
+        });
+      }
+      
+      // Для Android также принудительно обновляем состояние
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final currentState = playbackState.value;
+          playbackState.add(currentState.copyWith(
+            updatePosition: currentState.position,
+            bufferedPosition: currentState.bufferedPosition,
+          ));
+        });
       }
     }
+  }
+
+  Future<void> forceUpdateCover(String artUrl) async {
+    debugPrint('🔄 [Handler] Force updating cover: $artUrl');
+    
+    if (_currentMediaItem != null) {
+      // Получаем artUri с корректным cache-buster (уже есть в _getArtUriForPlatform)
+      Uri? newArtUri = _getArtUriForPlatform(artUrl);
+      
+      MediaItem updatedItem = MediaItem(
+        id: _currentMediaItem!.id,
+        title: _currentMediaItem!.title,
+        artist: _currentMediaItem!.artist!,
+        album: _currentMediaItem!.album ?? 'J-Rock Radio',
+        artUri: newArtUri,
+        duration: _currentMediaItem!.duration,
+        extras: {
+          ..._currentMediaItem!.extras ?? {},
+          'forceCoverUpdate': DateTime.now().millisecondsSinceEpoch,
+          'originalArtUrl': artUrl,
+        },
+      );
+      
+      _currentMediaItem = updatedItem;
+      mediaItem.add(_currentMediaItem!);
+      
+      debugPrint('✅ [Handler] Cover force updated to: $newArtUri');
+    }
+  }
 
   Future<void> updateMetadata(AudioMetadata metadata) async {
     debugPrint('🎵 [Handler] updateMetadata called with raw artUrl: ${metadata.artUrl}');
@@ -272,10 +271,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('🎵 [Handler] MediaItem updated with artUri: ${_currentMediaItem!.artUri}');
     debugPrint('🎵 [Handler] MediaItem ID: ${_currentMediaItem!.id}');
     
-    // ДЛЯ ВСЕХ ПЛАТФОРМ: вызываем forceUpdateMediaItem для гарантированного обновления
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      forceUpdateMediaItem();
-    });
+    // Только для iOS — дополнительное принуждение
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        forceUpdateMediaItem();
+      });
+    }
   }
 
   final Map<String, Uri> _artUriCache = {}; // Оставьте эту строку

@@ -443,8 +443,14 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       // Обновляем локально
       _currentMetadata = updatedMetadata;
       
-      // Обновляем через стандартный механизм (вызовет handler.updateMetadata)
+      // 1. Обновляем через стандартный метод (он уже содержит mediaItem.add)
       _updateBackgroundAudioMetadata(updatedMetadata);
+
+      // 2. **ДОБАВЛЯЕМ ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ЧЕРЕЗ HANDLER**
+      //    Без этого на некоторых версиях Android обложка не обновляется.
+      if (_audioHandler is AudioPlayerHandler) {
+        (_audioHandler as AudioPlayerHandler).forceUpdateCover(newArtUrl);
+      }
       
       _notifyListeners();
     }
