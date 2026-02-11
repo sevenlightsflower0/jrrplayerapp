@@ -124,55 +124,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  void _updateControls() {
-    final currentState = playbackState.value;
-    final isPlaying = currentState.playing;
-    
-    final List<MediaControl> dynamicControls = [
-      const MediaControl(
-        androidIcon: 'drawable/ic_skip_previous',
-        label: 'Предыдущий',
-        action: MediaAction.skipToPrevious,
-      ),
-      const MediaControl(
-        androidIcon: 'drawable/ic_rewind_30s',
-        label: '30 секунд назад',
-        action: MediaAction.rewind,
-      ),
-      if (!isPlaying)
-        const MediaControl(
-          androidIcon: 'drawable/ic_play',
-          label: 'Воспроизвести',
-          action: MediaAction.play,
-        ),
-      if (isPlaying)
-        const MediaControl(
-          androidIcon: 'drawable/ic_pause',
-          label: 'Пауза',
-          action: MediaAction.pause,
-        ),
-      const MediaControl(
-        androidIcon: 'drawable/ic_fast_forward_30s',
-        label: '30 секунд вперед',
-        action: MediaAction.fastForward,
-      ),
-      const MediaControl(
-        androidIcon: 'drawable/ic_skip_next',
-        label: 'Следующий',
-        action: MediaAction.skipToNext,
-      ),
-      const MediaControl(
-        androidIcon: 'drawable/ic_stop',
-        label: 'Стоп',
-        action: MediaAction.stop,
-      ),
-    ];
-    
-    playbackState.add(currentState.copyWith(
-      controls: dynamicControls,
-    ));
-  }
-
   void _onAudioServiceUpdate() {
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
@@ -231,34 +182,35 @@ class AudioPlayerHandler extends BaseAudioHandler {
         }
       }
     }
+
     Future<void> forceUpdateCover(String artUrl) async {
-    debugPrint('🔄 [Handler] Force updating cover: $artUrl');
-    
-    if (_currentMediaItem != null) {
-      // Получаем новый artUri
-      Uri? newArtUri = _getArtUriForPlatform(artUrl);
+      debugPrint('🔄 [Handler] Force updating cover: $artUrl');
       
-      // Создаем обновленный MediaItem с новым artUri
-      MediaItem updatedItem = MediaItem(
-        id: _currentMediaItem!.id,
-        title: _currentMediaItem!.title,
-        artist: _currentMediaItem!.artist!,
-        album: _currentMediaItem!.album ?? 'J-Rock Radio',
-        artUri: newArtUri,
-        duration: _currentMediaItem!.duration,
-        extras: {
-          ..._currentMediaItem!.extras ?? {},
-          'forceCoverUpdate': DateTime.now().millisecondsSinceEpoch,
-          'originalArtUrl': artUrl,
-        },
-      );
-      
-      _currentMediaItem = updatedItem;
-      mediaItem.add(_currentMediaItem!);
-      
-      debugPrint('✅ [Handler] Cover force updated to: $newArtUri');
+      if (_currentMediaItem != null) {
+        // Получаем новый artUri
+        Uri? newArtUri = _getArtUriForPlatform(artUrl);
+        
+        // Создаем обновленный MediaItem с новым artUri
+        MediaItem updatedItem = MediaItem(
+          id: _currentMediaItem!.id,
+          title: _currentMediaItem!.title,
+          artist: _currentMediaItem!.artist!,
+          album: _currentMediaItem!.album ?? 'J-Rock Radio',
+          artUri: newArtUri,
+          duration: _currentMediaItem!.duration,
+          extras: {
+            ..._currentMediaItem!.extras ?? {},
+            'forceCoverUpdate': DateTime.now().millisecondsSinceEpoch,
+            'originalArtUrl': artUrl,
+          },
+        );
+        
+        _currentMediaItem = updatedItem;
+        mediaItem.add(_currentMediaItem!);
+        
+        debugPrint('✅ [Handler] Cover force updated to: $newArtUri');
+      }
     }
-  }
 
   Future<void> updateMetadata(AudioMetadata metadata) async {
     debugPrint('🎵 [Handler] updateMetadata called with raw artUrl: ${metadata.artUrl}');
@@ -310,9 +262,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
     // Принудительно обновляем медиа-элемент
     mediaItem.add(_currentMediaItem!);
-    
-    // Обновляем контролы
-    _updateControls();
     
     // Синхронизируем состояние воспроизведения
     final player = audioPlayerService.getPlayer();
@@ -398,8 +347,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final player = audioPlayerService.getPlayer();
     final position = player?.position ?? Duration.zero;
     final duration = player?.duration;
-    
-    List<MediaAction> actions = [
+    final isPodcast = audioPlayerService.isPodcastMode;
+
+    // Системные действия (разрешённые)
+    Set<MediaAction> systemActions = {
       MediaAction.seek,
       MediaAction.seekForward,
       MediaAction.seekBackward,
@@ -408,60 +359,71 @@ class AudioPlayerHandler extends BaseAudioHandler {
       MediaAction.play,
       MediaAction.pause,
       MediaAction.stop,
-      MediaAction.rewind,
-      MediaAction.fastForward,
-    ];
-    
-    if (!audioPlayerService.isPodcastMode) {
-      actions.remove(MediaAction.seek);
-      actions.remove(MediaAction.skipToNext);
-      actions.remove(MediaAction.skipToPrevious);
+    };
+    if (!isPodcast) {
+      // Для радио убираем seek и переключение треков (если не нужно)
+      systemActions.remove(MediaAction.seek);
+      systemActions.remove(MediaAction.skipToNext);
+      systemActions.remove(MediaAction.skipToPrevious);
     }
 
-    final List<MediaControl> dynamicControls = [
-      const MediaControl(
-        androidIcon: 'drawable/ic_skip_previous',
-        label: 'Предыдущий',
-        action: MediaAction.skipToPrevious,
-      ),
-      const MediaControl(
+    // Динамические контролы – 30 секунд ТОЛЬКО для подкастов
+    final List<MediaControl> dynamicControls = [];
+    dynamicControls.add(const MediaControl(
+      androidIcon: 'drawable/ic_skip_previous',
+      label: 'Предыдущий',
+      action: MediaAction.skipToPrevious,
+    ));
+    if (isPodcast) {
+      dynamicControls.add(const MediaControl(
         androidIcon: 'drawable/ic_rewind_30s',
         label: '30 секунд назад',
         action: MediaAction.rewind,
-      ),
-      if (!isPlaying)
-        const MediaControl(
-          androidIcon: 'drawable/ic_play',
-          label: 'Воспроизвести',
-          action: MediaAction.play,
-        ),
-      if (isPlaying)
-        const MediaControl(
-          androidIcon: 'drawable/ic_pause',
-          label: 'Пауза',
-          action: MediaAction.pause,
-        ),
-      const MediaControl(
+      ));
+    }
+    if (!isPlaying) {
+      dynamicControls.add(const MediaControl(
+        androidIcon: 'drawable/ic_play',
+        label: 'Воспроизвести',
+        action: MediaAction.play,
+      ));
+    } else {
+      dynamicControls.add(const MediaControl(
+        androidIcon: 'drawable/ic_pause',
+        label: 'Пауза',
+        action: MediaAction.pause,
+      ));
+    }
+    if (isPodcast) {
+      dynamicControls.add(const MediaControl(
         androidIcon: 'drawable/ic_fast_forward_30s',
         label: '30 секунд вперед',
         action: MediaAction.fastForward,
-      ),
-      const MediaControl(
-        androidIcon: 'drawable/ic_skip_next',
-        label: 'Следующий',
-        action: MediaAction.skipToNext,
-      ),
-      const MediaControl(
-        androidIcon: 'drawable/ic_stop',
-        label: 'Стоп',
-        action: MediaAction.stop,
-      ),
-    ];
+      ));
+    }
+    dynamicControls.add(const MediaControl(
+      androidIcon: 'drawable/ic_skip_next',
+      label: 'Следующий',
+      action: MediaAction.skipToNext,
+    ));
+    dynamicControls.add(const MediaControl(
+      androidIcon: 'drawable/ic_stop',
+      label: 'Стоп',
+      action: MediaAction.stop,
+    ));
 
-    final List<int> compactIndices = isPlaying 
-        ? [0, 3, 6]  // prev, pause, stop
-        : [0, 2, 6]; // prev, play, stop  
-    
+    // Компактные индексы для Android (всегда 3 кнопки)
+    List<int> compactIndices;
+    if (isPodcast) {
+      // Для подкаста оставляем старую логику: prev, pause/play, stop
+      compactIndices = isPlaying ? [0, 3, 6] : [0, 2, 6];
+    } else {
+      // Для радио: prev, play/pause, next (индексы 0, 1, 2)
+      // Если по какой-то причине skip_next удалён из контролов – подстрахуемся
+      compactIndices = [0, 1, 2];
+    }
+
+    // ProcessingState
     AudioProcessingState processingState = AudioProcessingState.idle;
     if (player != null) {
       switch (player.processingState) {
@@ -482,10 +444,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
           break;
       }
     }
-    
+
     playbackState.add(PlaybackState(
       controls: dynamicControls,
-      systemActions: actions.toSet(),
+      systemActions: systemActions,
       androidCompactActionIndices: compactIndices,
       playing: isPlaying,
       updatePosition: position,
@@ -595,7 +557,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     
   void forceUpdateUI(bool isPlaying) {
     updatePlaybackState(isPlaying);
-    _updateControls();
   }
 
   @override

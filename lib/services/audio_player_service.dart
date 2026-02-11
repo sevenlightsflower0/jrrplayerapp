@@ -443,15 +443,8 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       // Обновляем локально
       _currentMetadata = updatedMetadata;
       
-      // Обновляем в background audio
+      // Обновляем через стандартный механизм (вызовет handler.updateMetadata)
       _updateBackgroundAudioMetadata(updatedMetadata);
-      
-      // Принудительно обновляем уведомление
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
-          (_audioHandler as AudioPlayerHandler).forceUpdateCover(newArtUrl);
-        }
-      });
       
       _notifyListeners();
     }
@@ -520,6 +513,18 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
 
             artist ??= 'J-Rock Radio';
             title ??= 'Live Stream';
+
+            final cacheKey = '$artist|$title';
+            String? cachedCoverUrl;
+            if (_coverCache.containsKey(cacheKey)) {
+              cachedCoverUrl = _coverCache[cacheKey];
+              if (cachedCoverUrl != null && cachedCoverUrl.isNotEmpty && cachedCoverUrl != 'null') {
+                debugPrint('✅ Using cached web cover: $cachedCoverUrl');
+              } else {
+                _coverCache.remove(cacheKey);
+                cachedCoverUrl = null;
+              }
+            }
 
             // Проверяем, не тот же ли это трек
             final currentTrackId = '$artist|$title';
@@ -750,39 +755,44 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
         
         debugPrint('🎵 New track detected: $artist - $songTitle');
 
-        // Сначала обновляем с дефолтной обложкой
-        final initialMetadata = AudioMetadata(
+        // ---------- ПРОВЕРКА КЭША ----------
+        final cacheKey = '$artist|$songTitle';
+        String? cachedCoverUrl;
+        if (_coverCache.containsKey(cacheKey)) {
+          cachedCoverUrl = _coverCache[cacheKey];
+          if (cachedCoverUrl != null && cachedCoverUrl.isNotEmpty && cachedCoverUrl != 'null') {
+            debugPrint('✅ Using cached cover for $cacheKey: $cachedCoverUrl');
+          } else {
+            _coverCache.remove(cacheKey);
+            cachedCoverUrl = null;
+          }
+        }
+
+        final metadata = AudioMetadata(
           title: songTitle,
           artist: artist,
           album: 'J-Rock Radio',
-          artUrl: AudioMetadata.defaultCoverUrl,
+          artUrl: cachedCoverUrl ?? AudioMetadata.defaultCoverUrl,
         );
-        
-        updateMetadata(initialMetadata);
 
-        // Затем асинхронно ищем и обновляем обложку
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          try {
-            debugPrint('🔄 Searching cover for: $artist - $songTitle');
-            final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
-            
-            if (artUrl != null && artUrl.isNotEmpty) {
-              debugPrint('✅ Found cover, updating: $artUrl');
-              
-              // Обновляем только обложку, не меняя другие метаданные
-              updateCoverOnly(artUrl);
-              
-              // Дополнительно принудительно обновляем MediaItem
-              if (_audioHandler != null && _audioHandler is AudioPlayerHandler) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  (_audioHandler as AudioPlayerHandler).forceUpdateMediaItem();
-                });
+        // Обновляем метаданные сразу (с обложкой из кэша или дефолтной)
+        updateMetadata(metadata);
+
+        // Если обложки в кэше не было – запускаем асинхронный поиск
+        if (cachedCoverUrl == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            try {
+              debugPrint('🔄 Searching cover for: $artist - $songTitle');
+              final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
+              if (artUrl != null && artUrl.isNotEmpty) {
+                debugPrint('✅ Found cover, updating: $artUrl');
+                updateCoverOnly(artUrl);
               }
+            } catch (e) {
+              debugPrint('❌ Error updating cover: $e');
             }
-          } catch (e) {
-            debugPrint('❌ Error updating cover: $e');
-          }
-        });
+          });
+        }
       }
     }
   }
