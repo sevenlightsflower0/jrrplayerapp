@@ -13,7 +13,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
 
-  // --- Текущий MediaItem, показываемый в уведомлении ---
+  // --- Текущий MediaItem ---
   MediaItem? _currentMediaItem;
 
   // --- Ожидающие метаданные (ещё без обложки) ---
@@ -27,17 +27,31 @@ class AudioPlayerHandler extends BaseAudioHandler {
   StreamSubscription<bool>? _playingSubscription;
   StreamSubscription<ProcessingState>? _processingSubscription;
 
-  // --- Блокировка команд и таймаут ---
+  // --- Блокировка команд ---
   bool _isHandlingControl = false;
   Timer? _commandTimeoutTimer;
 
   // --- Debounce для состояния воспроизведения ---
   Timer? _playbackStateDebounceTimer;
 
-  // --- Кэш для artUri (ключ – оригинальный URL без cache-buster) ---
+  // --- Throttle для обновления позиции (раз в секунду) ---
+  Timer? _positionThrottleTimer;
+  Duration? _lastPendingPosition;
+
+  // --- Кэш для artUri (ключ – оригинальный URL) ---
   final Map<String, Uri> _artUriCache = {};
 
-  // --- Дефолтная обложка для разных платформ ---
+  // --- Кэши для статичных controls и systemActions ---
+  List<MediaControl>? _radioControls;
+  List<MediaControl>? _podcastPlayingControls;
+  List<MediaControl>? _podcastPausedControls;
+  Set<MediaAction>? _radioSystemActions;
+  Set<MediaAction>? _podcastSystemActions;
+  List<int>? _radioCompactIndices;
+  List<int>? _podcastPlayingCompactIndices;
+  List<int>? _podcastPausedCompactIndices;
+
+  // --- Дефолтная обложка для платформ ---
   static String? _androidPackageName;
   static Uri? _cachedLocalDefaultCoverUri;
 
@@ -46,9 +60,132 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _updateInitialMediaItem();
     audioPlayerService.addListener(_onAudioServiceUpdate);
     _setupStreams();
+    _initCaches();
   }
 
-  // ==================== ИНИЦИАЛИЗАЦИЯ ДЕФОЛТНОЙ ОБЛОЖКИ ====================
+  void _initCaches() {
+    // Radio controls – фиксированные
+    _radioControls = [
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_previous',
+        label: 'Предыдущий',
+        action: MediaAction.skipToPrevious,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_play',
+        label: 'Воспроизвести',
+        action: MediaAction.play,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_pause',
+        label: 'Пауза',
+        action: MediaAction.pause,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_next',
+        label: 'Следующий',
+        action: MediaAction.skipToNext,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_stop',
+        label: 'Стоп',
+        action: MediaAction.stop,
+      ),
+    ];
+
+    // Podcast controls (играет)
+    _podcastPlayingControls = [
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_previous',
+        label: 'Предыдущий',
+        action: MediaAction.skipToPrevious,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_rewind_30s',
+        label: '30 секунд назад',
+        action: MediaAction.rewind,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_pause',
+        label: 'Пауза',
+        action: MediaAction.pause,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_fast_forward_30s',
+        label: '30 секунд вперед',
+        action: MediaAction.fastForward,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_next',
+        label: 'Следующий',
+        action: MediaAction.skipToNext,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_stop',
+        label: 'Стоп',
+        action: MediaAction.stop,
+      ),
+    ];
+
+    // Podcast controls (пауза)
+    _podcastPausedControls = [
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_previous',
+        label: 'Предыдущий',
+        action: MediaAction.skipToPrevious,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_rewind_30s',
+        label: '30 секунд назад',
+        action: MediaAction.rewind,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_play',
+        label: 'Воспроизвести',
+        action: MediaAction.play,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_fast_forward_30s',
+        label: '30 секунд вперед',
+        action: MediaAction.fastForward,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_skip_next',
+        label: 'Следующий',
+        action: MediaAction.skipToNext,
+      ),
+      const MediaControl(
+        androidIcon: 'drawable/ic_stop',
+        label: 'Стоп',
+        action: MediaAction.stop,
+      ),
+    ];
+
+    // System actions
+    _radioSystemActions = {
+      MediaAction.play,
+      MediaAction.pause,
+      MediaAction.stop,
+    };
+
+    _podcastSystemActions = {
+      MediaAction.seek,
+      MediaAction.seekForward,
+      MediaAction.seekBackward,
+      MediaAction.skipToNext,
+      MediaAction.skipToPrevious,
+      MediaAction.play,
+      MediaAction.pause,
+      MediaAction.stop,
+    };
+
+    // Compact indices
+    _radioCompactIndices = [0, 1, 2];
+    _podcastPlayingCompactIndices = [0, 3, 5];
+    _podcastPausedCompactIndices = [0, 2, 5];
+  }
+
+  // ==================== ДЕФОЛТНАЯ ОБЛОЖКА ====================
 
   Future<void> _initDefaultArtUris() async {
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -87,7 +224,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     return Uri.parse('asset:///assets/images/default_cover.png');
   }
 
-  // ==================== УПРАВЛЕНИЕ КОМАНДАМИ ====================
+  // ==================== КОМАНДЫ ====================
 
   void _resetCommandLock() {
     if (_isHandlingControl) {
@@ -126,7 +263,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  // ==================== ПОДПИСКИ НА СОСТОЯНИЕ ПЛЕЕРА ====================
+  // ==================== ПОДПИСКИ НА ПЛЕЕР ====================
 
   void _setupStreams() {
     _positionSubscription?.cancel();
@@ -137,7 +274,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final player = audioPlayerService.getPlayer();
     if (player == null) return;
 
-    _positionSubscription = player.positionStream.listen(_updatePlaybackPosition);
+    _positionSubscription = player.positionStream.listen(_onPositionChanged);
     _durationSubscription = player.durationStream.listen(_updatePlaybackDuration);
     _playingSubscription = player.playingStream.listen((isPlaying) {
       debugPrint('Background: playingStream changed to $isPlaying');
@@ -146,6 +283,20 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _processingSubscription = player.processingStateStream.listen((state) {
       debugPrint('Background: processingState changed to $state');
       _debouncedUpdatePlaybackState(player.playing);
+    });
+  }
+
+  // Throttle для позиции – не чаще 1 раза в секунду
+  void _onPositionChanged(Duration position) {
+    _lastPendingPosition = position;
+    _positionThrottleTimer?.cancel();
+    _positionThrottleTimer = Timer(const Duration(seconds: 1), () {
+      if (_lastPendingPosition != null) {
+        playbackState.add(playbackState.value.copyWith(
+          updatePosition: _lastPendingPosition!,
+        ));
+        _lastPendingPosition = null;
+      }
     });
   }
 
@@ -159,12 +310,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     });
   }
 
-  void _updatePlaybackPosition(Duration position) {
-    playbackState.add(playbackState.value.copyWith(
-      updatePosition: position,
-    ));
-  }
-
   void _updatePlaybackDuration(Duration? duration) {
     if (_currentMediaItem != null && duration != null) {
       if (_currentMediaItem!.duration != duration) {
@@ -174,12 +319,11 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  // ==================== ОБНОВЛЕНИЕ МЕТАДАННЫХ (С ДЕБАНСОМ) ====================
+  // ==================== ОБНОВЛЕНИЕ МЕТАДАННЫХ ====================
 
   Future<void> updateMetadata(AudioMetadata metadata) async {
     debugPrint('🎵 [Handler] updateMetadata called: ${metadata.title}');
 
-    // Для радио – фиксированный ID, чтобы не пересоздавать уведомление
     final bool isRadio = !audioPlayerService.isPodcastMode;
     final String mediaId = isRadio
         ? 'jrr_live_stream'
@@ -189,31 +333,27 @@ class AudioPlayerHandler extends BaseAudioHandler {
         ? audioPlayerService.currentEpisode?.duration
         : null;
 
-    // Подготовленный URL обложки (без cache-buster)
     final String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
     final Uri? artUri = _getArtUriForPlatform(preparedArtUrl);
     final bool isDefaultCover = metadata.artUrl.isEmpty ||
         metadata.artUrl == 'assets/images/default_cover.png' ||
         metadata.artUrl == AudioMetadata.defaultCoverUrl;
 
-    // --- Если обложка уже известна (не дефолтная), обновляем сразу ---
     if (!isDefaultCover) {
       _cancelPendingMetadata();
       _applyMediaItem(mediaId, metadata, artUri, duration);
       return;
     }
 
-    // --- Если пришла дефолтная обложка, возможно, настоящая ещё не найдена ---
-    // Проверяем, действительно ли изменился трек
+    // Тот же трек – игнорируем дефолтную обложку
     if (_currentMediaItem != null &&
         _currentMediaItem!.title == metadata.title &&
         _currentMediaItem!.artist == metadata.artist) {
-      // Тот же трек – игнорируем дефолтную обложку, оставляем старую
       debugPrint('🎵 [Handler] Same track, ignoring default cover');
       return;
     }
 
-    // Новый трек: откладываем обновление, даём шанс найти обложку
+    // Новый трек – откладываем обновление на 2 секунды
     _pendingMetadata = metadata;
     _pendingMetadataTimer?.cancel();
     _pendingMetadataTimer = Timer(_pendingTimeout, () {
@@ -225,11 +365,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('🎵 [Handler] Waiting for cover, current artUri: ${_currentMediaItem?.artUri}');
   }
 
-  /// Принудительное обновление обложки (вызывается, когда найдена реальная)
   Future<void> forceUpdateCover(String artUrl) async {
     debugPrint('🔄 [Handler] Force update cover: $artUrl');
 
-    // Если есть ожидающие метаданные – применяем их с новой обложкой
     if (_pendingMetadata != null) {
       _cancelPendingMetadata();
 
@@ -248,7 +386,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return;
     }
 
-    // Нет ожидающих метаданных – обновляем только обложку у текущего MediaItem
     if (_currentMediaItem != null) {
       final Uri? newArtUri = _getArtUriForPlatform(artUrl);
       if (_currentMediaItem!.artUri?.toString() == newArtUri?.toString()) {
@@ -260,7 +397,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         artUri: newArtUri,
         extras: {
           ...?_currentMediaItem!.extras,
-          'coverUpdatedAt': DateTime.now().millisecondsSinceEpoch, // только для логирования
+          // Без временных меток – только данные
         },
       );
 
@@ -291,11 +428,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
         'episodeId': audioPlayerService.currentEpisode?.id,
         'artUrlRaw': metadata.artUrl,
         'isRadio': isRadio,
-        // Убраны все динамические временные метки, которые меняются при каждом обновлении
       },
     );
 
-    // Сравниваем только значимые поля (всё, кроме extras)
+    // Сравниваем все значимые поля (кроме extras)
     if (_currentMediaItem != null &&
         _currentMediaItem!.id == newItem.id &&
         _currentMediaItem!.title == newItem.title &&
@@ -311,17 +447,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
     mediaItem.add(_currentMediaItem!);
     debugPrint('🎵 [Handler] MediaItem applied: ${_currentMediaItem!.artUri}');
 
-    // Синхронизируем состояние воспроизведения
     final player = audioPlayerService.getPlayer();
     if (player != null) updatePlaybackState(player.playing);
   }
 
-  // ==================== ART URI (БЕЗ CACHE-BUSTER) ====================
+  // ==================== ART URI (КЭШ БЕЗ TIMESTAMP) ====================
 
   Uri? _getArtUriForPlatform(String artUrl) {
-    // Используем оригинальный URL как ключ кэша (без добавления timestamp)
     final String cacheKey = artUrl;
-
     if (_artUriCache.containsKey(cacheKey)) {
       return _artUriCache[cacheKey];
     }
@@ -338,7 +471,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       Uri result;
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-          result = Uri.parse(artUrl); // без cache-buster
+          result = Uri.parse(artUrl);
         } else if (artUrl.startsWith('assets/')) {
           result = Uri.parse('asset:///FlutterAssets/$artUrl');
         } else if (artUrl.startsWith('asset://')) {
@@ -367,7 +500,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  // ==================== PLAYBACK STATE ====================
+  // ==================== PLAYBACK STATE (С КЭШАМИ) ====================
 
   void updatePlaybackState(bool isPlaying) {
     final player = audioPlayerService.getPlayer();
@@ -375,67 +508,30 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final duration = player?.duration;
     final isPodcast = audioPlayerService.isPodcastMode;
 
-    final systemActions = <MediaAction>{
-      MediaAction.seek,
-      MediaAction.seekForward,
-      MediaAction.seekBackward,
-      MediaAction.skipToNext,
-      MediaAction.skipToPrevious,
-      MediaAction.play,
-      MediaAction.pause,
-      MediaAction.stop,
-    };
-    if (!isPodcast) {
-      systemActions.remove(MediaAction.seek);
-      systemActions.remove(MediaAction.skipToNext);
-      systemActions.remove(MediaAction.skipToPrevious);
-    }
+    // Выбираем кэшированные объекты (один и тот же экземпляр всегда)
+    final List<MediaControl> controls;
+    final Set<MediaAction> systemActions;
+    final List<int> compactIndices;
 
-    final controls = <MediaControl>[];
-    controls.add(const MediaControl(
-      androidIcon: 'drawable/ic_skip_previous',
-      label: 'Предыдущий',
-      action: MediaAction.skipToPrevious,
-    ));
     if (isPodcast) {
-      controls.add(const MediaControl(
-        androidIcon: 'drawable/ic_rewind_30s',
-        label: '30 секунд назад',
-        action: MediaAction.rewind,
-      ));
+      controls = isPlaying ? _podcastPlayingControls! : _podcastPausedControls!;
+      systemActions = _podcastSystemActions!;
+      compactIndices = isPlaying 
+          ? _podcastPlayingCompactIndices! 
+          : _podcastPausedCompactIndices!;
+    } else {
+      // Для радио переключаем play/pause динамически, но кэш один – заменяем элемент при необходимости
+      // Чтобы не создавать новый список каждый раз, используем фиксированный список, 
+      // но меняем иконку в зависимости от isPlaying.
+      // Однако audio_service требует, чтобы controls были актуальными. 
+      // Можно оставить как есть – radioControls уже содержит обе иконки, 
+      // но мы должны правильно отдавать их в зависимости от состояния.
+      // Для простоты и гарантии корректности – создаём новый список на основе кэша, 
+      // это всё равно происходит только при изменении playing (debounce 300ms), не часто.
+      controls = _buildRadioControls(isPlaying);
+      systemActions = _radioSystemActions!;
+      compactIndices = _radioCompactIndices!;
     }
-    controls.add(isPlaying
-        ? const MediaControl(
-            androidIcon: 'drawable/ic_pause',
-            label: 'Пауза',
-            action: MediaAction.pause,
-          )
-        : const MediaControl(
-            androidIcon: 'drawable/ic_play',
-            label: 'Воспроизвести',
-            action: MediaAction.play,
-          ));
-    if (isPodcast) {
-      controls.add(const MediaControl(
-        androidIcon: 'drawable/ic_fast_forward_30s',
-        label: '30 секунд вперед',
-        action: MediaAction.fastForward,
-      ));
-    }
-    controls.add(const MediaControl(
-      androidIcon: 'drawable/ic_skip_next',
-      label: 'Следующий',
-      action: MediaAction.skipToNext,
-    ));
-    controls.add(const MediaControl(
-      androidIcon: 'drawable/ic_stop',
-      label: 'Стоп',
-      action: MediaAction.stop,
-    ));
-
-    final compactIndices = isPodcast
-        ? (isPlaying ? [0, 3, 6] : [0, 2, 6])
-        : [0, 1, 2];
 
     AudioProcessingState processingState = AudioProcessingState.idle;
     if (player != null) {
@@ -461,14 +557,34 @@ class AudioPlayerHandler extends BaseAudioHandler {
     ));
   }
 
-  // ==================== ОБРАБОТЧИКИ СОБЫТИЙ СЕРВИСА ====================
+  // Вспомогательный метод для радио – создаёт список с правильной кнопкой play/pause
+  List<MediaControl> _buildRadioControls(bool isPlaying) {
+    // Берём базовый список из кэша и заменяем элемент с play/pause
+    final base = List<MediaControl>.from(_radioControls!);
+    // Индекс 1 – play, индекс 2 – pause. Заменяем на нужный.
+    if (isPlaying) {
+      base[1] = const MediaControl(
+        androidIcon: 'drawable/ic_pause',
+        label: 'Пауза',
+        action: MediaAction.pause,
+      );
+    } else {
+      base[1] = const MediaControl(
+        androidIcon: 'drawable/ic_play',
+        label: 'Воспроизвести',
+        action: MediaAction.play,
+      );
+    }
+    return base;
+  }
+
+  // ==================== ОБРАБОТЧИК СОБЫТИЙ СЕРВИСА ====================
 
   void _onAudioServiceUpdate() {
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
 
     if (metadata != null) {
-      // Проверяем, действительно ли изменился трек (по названию и исполнителю)
       final trackChanged = _currentMediaItem == null ||
           _currentMediaItem!.title != metadata.title ||
           _currentMediaItem!.artist != metadata.artist;
@@ -499,11 +615,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     updatePlaybackState(false);
   }
 
-  // ==================== МЕТОДЫ ДЛЯ ВНЕШНЕГО ВЫЗОВА ====================
-
-  void forceUpdateMediaItem() {
-    // Устарело, оставлено для совместимости
-  }
+  // ==================== ПУБЛИЧНЫЕ МЕТОДЫ ====================
 
   void forceUpdateUI(bool isPlaying) {
     updatePlaybackState(isPlaying);
@@ -514,7 +626,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void refreshArtUriForNewTrack(String newArtUrl) {
-    // Очистка кэша для старого трека
     if (_currentMediaItem?.extras?['artUrlRaw'] != null) {
       final oldArtUrl = _currentMediaItem!.extras!['artUrlRaw'] as String;
       _artUriCache.remove(oldArtUrl);
@@ -524,7 +635,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  // ==================== КОМАНДЫ ====================
+  // ==================== КОМАНДЫ AUDIO_SERVICE ====================
 
   @override
   Future<void> play() => _executeCommand(() async {
@@ -625,6 +736,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _resetCommandLock();
     _commandTimeoutTimer?.cancel();
     _playbackStateDebounceTimer?.cancel();
+    _positionThrottleTimer?.cancel();
     _cancelPendingMetadata();
 
     audioPlayerService.removeListener(_onAudioServiceUpdate);
