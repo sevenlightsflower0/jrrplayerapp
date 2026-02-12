@@ -137,8 +137,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final player = audioPlayerService.getPlayer();
     if (player == null) return;
 
-    _positionSubscription = player.positionStream.listen(_updatePlaybackPosition);
-    _durationSubscription = player.durationStream.listen(_updatePlaybackDuration);
+    // Playing and processing states are always needed
     _playingSubscription = player.playingStream.listen((isPlaying) {
       debugPrint('Background: playingStream changed to $isPlaying');
       _debouncedUpdatePlaybackState(isPlaying);
@@ -147,6 +146,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       debugPrint('Background: processingState changed to $state');
       _debouncedUpdatePlaybackState(player.playing);
     });
+
+    // --- Only for podcast: subscribe to position and duration ---
+    if (audioPlayerService.isPodcastMode) {
+      _positionSubscription = player.positionStream.listen(_updatePlaybackPosition);
+      _durationSubscription = player.durationStream.listen(_updatePlaybackDuration);
+    } else {
+      // For radio: clear any previously stored position/duration values
+      _positionSubscription = null;
+      _durationSubscription = null;
+    }
   }
 
   void _debouncedUpdatePlaybackState(bool isPlaying) {
@@ -160,12 +169,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _updatePlaybackPosition(Duration position) {
+    if (!audioPlayerService.isPodcastMode) return; // ← radio: ignore
     playbackState.add(playbackState.value.copyWith(
       updatePosition: position,
     ));
   }
 
   void _updatePlaybackDuration(Duration? duration) {
+    if (!audioPlayerService.isPodcastMode) return; // ← radio: ignore
     if (_currentMediaItem != null && duration != null) {
       if (_currentMediaItem!.duration != duration) {
         _currentMediaItem = _currentMediaItem!.copyWith(duration: duration);
@@ -371,11 +382,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   void updatePlaybackState(bool isPlaying) {
     final player = audioPlayerService.getPlayer();
-    final position = player?.position ?? Duration.zero;
-    final duration = player?.duration;
     final isPodcast = audioPlayerService.isPodcastMode;
 
-    // System actions (what the OS knows is supported)
+    // For radio: position is always 0, duration null (no seekbar)
+    final position = isPodcast && player != null ? player.position : Duration.zero;
+    final duration = isPodcast ? player?.duration : null;
+
+    // System actions
     final systemActions = <MediaAction>{
       MediaAction.seek,
       MediaAction.seekForward,
@@ -392,20 +405,15 @@ class AudioPlayerHandler extends BaseAudioHandler {
       systemActions.remove(MediaAction.skipToPrevious);
     }
 
-    // Visible controls in the notification
+    // Visible controls
     final controls = <MediaControl>[];
 
-    // Previous – only for podcast
     if (isPodcast) {
       controls.add(const MediaControl(
         androidIcon: 'drawable/ic_skip_previous',
         label: 'Предыдущий',
         action: MediaAction.skipToPrevious,
       ));
-    }
-
-    // Rewind – only for podcast
-    if (isPodcast) {
       controls.add(const MediaControl(
         androidIcon: 'drawable/ic_rewind_30s',
         label: '30 секунд назад',
@@ -413,7 +421,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
       ));
     }
 
-    // Play / Pause – always
     controls.add(isPlaying
         ? const MediaControl(
             androidIcon: 'drawable/ic_pause',
@@ -426,17 +433,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
             action: MediaAction.play,
           ));
 
-    // Fast forward – only for podcast
     if (isPodcast) {
       controls.add(const MediaControl(
         androidIcon: 'drawable/ic_fast_forward_30s',
         label: '30 секунд вперед',
         action: MediaAction.fastForward,
       ));
-    }
-
-    // Next – only for podcast
-    if (isPodcast) {
       controls.add(const MediaControl(
         androidIcon: 'drawable/ic_skip_next',
         label: 'Следующий',
@@ -444,27 +446,22 @@ class AudioPlayerHandler extends BaseAudioHandler {
       ));
     }
 
-    // Stop – always
     controls.add(const MediaControl(
       androidIcon: 'drawable/ic_stop',
       label: 'Стоп',
       action: MediaAction.stop,
     ));
 
-    // Compact indices – adjusted for the actual number of controls
+    // Compact indices – adjusted for the actual controls
     final List<int> compactIndices;
     if (isPodcast) {
-      // For podcast: we usually show previous, play/pause, next in compact mode
-      // Order in controls: [prev?, rewind?, play/pause, ff?, next?, stop]
-      // We want indices of prev, play/pause, next
-      int prevIndex = 0; // first control is prev
-      int playIndex = isPodcast ? 2 : 0; // after prev and rewind (if both present)
+      // prev, play/pause, next
+      int prevIndex = 0;
+      int playIndex = 2; // after prev and rewind
       int nextIndex = controls.length - 2; // before stop
       compactIndices = [prevIndex, playIndex, nextIndex];
     } else {
-      // For radio: only play/pause and stop are present
-      // Order: [play/pause, stop]
-      // Show only play/pause in compact mode (index 0)
+      // radio: only play/pause and stop → show play/pause only
       compactIndices = [0];
     }
 
@@ -485,7 +482,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       systemActions: systemActions,
       androidCompactActionIndices: compactIndices,
       playing: isPlaying,
-      updatePosition: position,
+      updatePosition: position,         // ← zero for radio
       bufferedPosition: duration ?? Duration.zero,
       speed: 1.0,
       queueIndex: 0,
