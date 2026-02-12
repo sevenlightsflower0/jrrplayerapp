@@ -4,7 +4,11 @@ import 'package:flutter/widgets.dart';
 import 'package:jrrplayerapp/audio/audio_constants.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:package_info_plus/package_info_plus.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
@@ -15,17 +19,68 @@ class AudioPlayerHandler extends BaseAudioHandler {
   StreamSubscription<ProcessingState>? _processingSubscription;
   bool _isHandlingControl = false;
   Timer? _commandTimeoutTimer;
-// Кэш для быстрого доступа
-  static const String _defaultArtUriString = 'asset:///assets/images/default_cover.png';
-  static final Uri _defaultArtUri = Uri.parse(_defaultArtUriString);
-  
-  // iOS-специфичный кэш для изображений
 
+  // Кэш для быстрого доступа к арт-URI
+  final Map<String, Uri> _artUriCache = {};
+
+  // Для Android: packageName (получается асинхронно)
+  static String? _androidPackageName;
+  // Для iOS: закэшированный локальный URI дефолтной обложки
+  static Uri? _cachedLocalDefaultCoverUri;
 
   AudioPlayerHandler(this.audioPlayerService) {
+    _initDefaultArtUris(); // асинхронная инициализация дефолтной обложки
     _updateMediaItem();
     audioPlayerService.addListener(_onAudioServiceUpdate);
     _setupStreams();
+  }
+
+  // Инициализация дефолтных URI для разных платформ
+  Future<void> _initDefaultArtUris() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final packageInfo = await PackageInfo.fromPlatform();
+      _androidPackageName = packageInfo.packageName;
+      debugPrint('📦 Android packageName: $_androidPackageName');
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      await _initLocalDefaultCover();
+    }
+  }
+
+  // Копирование дефолтной обложки в локальную директорию (iOS)
+  static Future<void> _initLocalDefaultCover() async {
+    if (_cachedLocalDefaultCoverUri != null) return;
+    const assetPath = 'assets/images/default_cover.png';
+    final dir = await getApplicationDocumentsDirectory();
+    final localFile = File('${dir.path}/default_cover.png');
+    if (!await localFile.exists()) {
+      final byteData = await rootBundle.load(assetPath);
+      await localFile.writeAsBytes(byteData.buffer.asUint8List());
+    }
+    _cachedLocalDefaultCoverUri = Uri.file(localFile.path);
+    debugPrint('🍏 iOS default cover ready: $_cachedLocalDefaultCoverUri');
+  }
+
+  // Возвращает корректный URI для дефолтной обложки (синхронно)
+  Uri _getDefaultArtUri() {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      if (_androidPackageName != null) {
+        return Uri.parse(
+            'android.resource://$_androidPackageName/drawable/default_cover');
+      } else {
+        // Fallback: asset (пока пакет не получен – маловероятно)
+        return Uri.parse('asset:///assets/images/default_cover.png');
+      }
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      if (_cachedLocalDefaultCoverUri != null) {
+        return _cachedLocalDefaultCoverUri!;
+      } else {
+        // Fallback: asset (пока файл не скопирован)
+        return Uri.parse('asset:///assets/images/default_cover.png');
+      }
+    } else {
+      // Web / другие
+      return Uri.parse('asset:///assets/images/default_cover.png');
+    }
   }
 
   void _resetCommandLock() {
@@ -120,7 +175,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       _currentMediaItem = _currentMediaItem!.copyWith(
         duration: duration,
       );
-      mediaItem.add(_currentMediaItem);
+      mediaItem.add(_currentMediaItem!);
     }
   }
 
@@ -253,7 +308,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         'artUrlPrepared': preparedArtUrl,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'isRadio': isRadio,
-        'forceUpdate': DateTime.now().millisecondsSinceEpoch, // Добавляем для принудительного обновления
+        'forceUpdate': DateTime.now().millisecondsSinceEpoch,
       },
     );
 
@@ -279,15 +334,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  final Map<String, Uri> _artUriCache = {}; // Оставьте эту строку
-
+  // Метод для получения artUri с учетом платформы и кэширования
   Uri? _getArtUriForPlatform(String artUrl) {
     // Добавляем временную метку к URL для предотвращения кэширования
     String cacheBusterArtUrl = artUrl;
     
     if (!artUrl.contains('?') && 
         (artUrl.startsWith('http://') || artUrl.startsWith('https://'))) {
-      // Добавляем параметр для предотвращения кэширования
       cacheBusterArtUrl = '$artUrl?t=${DateTime.now().millisecondsSinceEpoch}';
     }
     
@@ -296,12 +349,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return _artUriCache[cacheBusterArtUrl];
     }
     
-    // Исправьте сравнение - проверяем, является ли это дефолтной обложкой
+    // Проверяем, является ли это дефолтной обложкой
     if (artUrl.isEmpty || 
         artUrl == 'assets/images/default_cover.png' || 
         artUrl == AudioMetadata.defaultCoverUrl) {
-      _artUriCache[cacheBusterArtUrl] = _defaultArtUri;
-      return _defaultArtUri;
+      final defaultUri = _getDefaultArtUri();
+      _artUriCache[cacheBusterArtUrl] = defaultUri;
+      return defaultUri;
     }
 
     try {
@@ -318,7 +372,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
           result = Uri.parse(artUrl);
         } else {
           // Для iOS возвращаем дефолтную обложку
-          result = _defaultArtUri;
+          result = _getDefaultArtUri();
         }
       } else {
         // Для Android и других платформ
@@ -331,7 +385,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
           result = Uri.parse(artUrl);
         } else {
           // Для Android возвращаем дефолтную обложку
-          result = _defaultArtUri;
+          result = _getDefaultArtUri();
         }
       }
       
@@ -339,8 +393,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return result;
     } catch (e) {
       debugPrint('❌ Error creating artUri for $artUrl: $e');
-      _artUriCache[cacheBusterArtUrl] = _defaultArtUri;
-      return _defaultArtUri;
+      final defaultUri = _getDefaultArtUri();
+      _artUriCache[cacheBusterArtUrl] = defaultUri;
+      return defaultUri;
     }
   }
 
@@ -362,7 +417,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       MediaAction.stop,
     };
     if (!isPodcast) {
-      // Для радио убираем seek и переключение треков (если не нужно)
+      // Для радио убираем seek и переключение треков
       systemActions.remove(MediaAction.seek);
       systemActions.remove(MediaAction.skipToNext);
       systemActions.remove(MediaAction.skipToPrevious);
@@ -416,11 +471,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
     // Компактные индексы для Android (всегда 3 кнопки)
     List<int> compactIndices;
     if (isPodcast) {
-      // Для подкаста оставляем старую логику: prev, pause/play, stop
       compactIndices = isPlaying ? [0, 3, 6] : [0, 2, 6];
     } else {
-      // Для радио: prev, play/pause, next (индексы 0, 1, 2)
-      // Если по какой-то причине skip_next удалён из контролов – подстрахуемся
       compactIndices = [0, 1, 2];
     }
 
@@ -482,7 +534,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _updateMediaItem() {
-    const defaultCoverUrl = 'asset:///assets/images/default_cover.png';
+    const defaultCoverUrl = AudioMetadata.defaultCoverUrl;
     debugPrint('🎵 _updateMediaItem with cover: $defaultCoverUrl');
     
     _currentMediaItem = MediaItem(
@@ -493,7 +545,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       artUri: _getArtUriForPlatform(defaultCoverUrl),
       extras: {'isRadio': true},
     );
-    mediaItem.add(_currentMediaItem);
+    mediaItem.add(_currentMediaItem!);
     updatePlaybackState(false);
   }
 

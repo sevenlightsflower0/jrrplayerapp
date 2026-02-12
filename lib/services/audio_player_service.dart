@@ -780,18 +780,18 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
 
         // Если обложки в кэше не было – запускаем асинхронный поиск
         if (cachedCoverUrl == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            try {
-              debugPrint('🔄 Searching cover for: $artist - $songTitle');
-              final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
-              if (artUrl != null && artUrl.isNotEmpty) {
-                debugPrint('✅ Found cover, updating: $artUrl');
-                updateCoverOnly(artUrl);
-              }
-            } catch (e) {
-              debugPrint('❌ Error updating cover: $e');
+          
+          try {
+            debugPrint('🔄 Searching cover for: $artist - $songTitle');
+            final artUrl = await _fetchCoverFromDeezer(songTitle, artist);
+            if (artUrl != null && artUrl.isNotEmpty) {
+              debugPrint('✅ Found cover, updating: $artUrl');
+              updateCoverOnly(artUrl);
             }
-          });
+          } catch (e) {
+            debugPrint('❌ Error updating cover: $e');
+        
+          }
         }
       }
     }
