@@ -12,31 +12,44 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayerService audioPlayerService;
+
+  // --- Текущий MediaItem, показываемый в уведомлении ---
   MediaItem? _currentMediaItem;
+
+  // --- Ожидающие метаданные (ещё без обложки) ---
+  AudioMetadata? _pendingMetadata;
+  Timer? _pendingMetadataTimer;
+  static const Duration _pendingTimeout = Duration(seconds: 2);
+
+  // --- Подписки на стримы плеера ---
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<bool>? _playingSubscription;
   StreamSubscription<ProcessingState>? _processingSubscription;
+
+  // --- Блокировка команд и таймаут ---
   bool _isHandlingControl = false;
   Timer? _commandTimeoutTimer;
-  Timer? _playbackStateDebounceTimer; // Для дебаунса обновлений состояния
 
-  // Кэш для быстрого доступа к арт-URI
+  // --- Debounce для состояния воспроизведения ---
+  Timer? _playbackStateDebounceTimer;
+
+  // --- Кэш для artUri (ключ – оригинальный URL без cache-buster) ---
   final Map<String, Uri> _artUriCache = {};
 
-  // Для Android: packageName (получается асинхронно)
+  // --- Дефолтная обложка для разных платформ ---
   static String? _androidPackageName;
-  // Для iOS: закэшированный локальный URI дефолтной обложки
   static Uri? _cachedLocalDefaultCoverUri;
 
   AudioPlayerHandler(this.audioPlayerService) {
-    _initDefaultArtUris(); // асинхронная инициализация дефолтной обложки
-    _updateMediaItem();
+    _initDefaultArtUris();
+    _updateInitialMediaItem();
     audioPlayerService.addListener(_onAudioServiceUpdate);
     _setupStreams();
   }
 
-  // Инициализация дефолтных URI для разных платформ
+  // ==================== ИНИЦИАЛИЗАЦИЯ ДЕФОЛТНОЙ ОБЛОЖКИ ====================
+
   Future<void> _initDefaultArtUris() async {
     if (defaultTargetPlatform == TargetPlatform.android) {
       final packageInfo = await PackageInfo.fromPlatform();
@@ -47,7 +60,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
   }
 
-  // Копирование дефолтной обложки в локальную директорию (iOS)
   static Future<void> _initLocalDefaultCover() async {
     if (_cachedLocalDefaultCoverUri != null) return;
     const assetPath = 'assets/images/default_cover.png';
@@ -61,28 +73,21 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('🍏 iOS default cover ready: $_cachedLocalDefaultCoverUri');
   }
 
-  // Возвращает корректный URI для дефолтной обложки (синхронно)
   Uri _getDefaultArtUri() {
     if (defaultTargetPlatform == TargetPlatform.android) {
       if (_androidPackageName != null) {
         return Uri.parse(
             'android.resource://$_androidPackageName/drawable/default_cover');
-      } else {
-        // Fallback: asset (пока пакет не получен – маловероятно)
-        return Uri.parse('asset:///assets/images/default_cover.png');
       }
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       if (_cachedLocalDefaultCoverUri != null) {
         return _cachedLocalDefaultCoverUri!;
-      } else {
-        // Fallback: asset (пока файл не скопирован)
-        return Uri.parse('asset:///assets/images/default_cover.png');
       }
-    } else {
-      // Web / другие
-      return Uri.parse('asset:///assets/images/default_cover.png');
     }
+    return Uri.parse('asset:///assets/images/default_cover.png');
   }
+
+  // ==================== УПРАВЛЕНИЕ КОМАНДАМИ ====================
 
   void _resetCommandLock() {
     if (_isHandlingControl) {
@@ -93,19 +98,19 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _commandTimeoutTimer = null;
   }
 
-  Future<void> _executeCommand(Future<void> Function() command, String commandName) async {
+  Future<void> _executeCommand(
+      Future<void> Function() command, String commandName) async {
     if (_isHandlingControl) {
       debugPrint('⚠️ Command $commandName: previous command still executing, resetting lock');
       _resetCommandLock();
     }
 
     _isHandlingControl = true;
-    
     _commandTimeoutTimer = Timer(const Duration(seconds: 5), () {
       debugPrint('⏰ Command $commandName timeout - resetting lock');
       _resetCommandLock();
     });
-    
+
     try {
       debugPrint('🎵 Background: Executing $commandName');
       await command();
@@ -113,48 +118,37 @@ class AudioPlayerHandler extends BaseAudioHandler {
     } catch (e, stackTrace) {
       debugPrint('❌ Error in background $commandName: $e');
       debugPrint('Stack trace: $stackTrace');
-      
       final player = audioPlayerService.getPlayer();
-      if (player != null) {
-        updatePlaybackState(player.playing);
-      }
-      
+      if (player != null) updatePlaybackState(player.playing);
       rethrow;
     } finally {
       _resetCommandLock();
     }
   }
 
+  // ==================== ПОДПИСКИ НА СОСТОЯНИЕ ПЛЕЕРА ====================
+
   void _setupStreams() {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _playingSubscription?.cancel();
     _processingSubscription?.cancel();
-    
+
     final player = audioPlayerService.getPlayer();
-    if (player != null) {
-      _positionSubscription = player.positionStream.listen((position) {
-        _updatePlaybackPosition(position);
-      });
-      
-      _durationSubscription = player.durationStream.listen((duration) {
-        _updatePlaybackDuration(duration);
-      });
-      
-      _playingSubscription = player.playingStream.listen((isPlaying) {
-        debugPrint('Background: playingStream changed to $isPlaying');
-        _debouncedUpdatePlaybackState(isPlaying);
-      });
-      
-      _processingSubscription = player.processingStateStream.listen((state) {
-        debugPrint('Background: processingState changed to $state');
-        // Для изменения processingState тоже используем дебаунс
-        _debouncedUpdatePlaybackState(player.playing);
-      });
-    }
+    if (player == null) return;
+
+    _positionSubscription = player.positionStream.listen(_updatePlaybackPosition);
+    _durationSubscription = player.durationStream.listen(_updatePlaybackDuration);
+    _playingSubscription = player.playingStream.listen((isPlaying) {
+      debugPrint('Background: playingStream changed to $isPlaying');
+      _debouncedUpdatePlaybackState(isPlaying);
+    });
+    _processingSubscription = player.processingStateStream.listen((state) {
+      debugPrint('Background: processingState changed to $state');
+      _debouncedUpdatePlaybackState(player.playing);
+    });
   }
 
-  // Дебаунс для частых обновлений состояния (играет/пауза/буферизация)
   void _debouncedUpdatePlaybackState(bool isPlaying) {
     _playbackStateDebounceTimer?.cancel();
     _playbackStateDebounceTimer = Timer(const Duration(milliseconds: 300), () {
@@ -162,8 +156,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
         updatePlaybackState(isPlaying);
         audioPlayerService.notifyListenersSafe();
       }
-    });		 
+    });
   }
+
   void _updatePlaybackPosition(Duration position) {
     playbackState.add(playbackState.value.copyWith(
       updatePosition: position,
@@ -172,277 +167,207 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   void _updatePlaybackDuration(Duration? duration) {
     if (_currentMediaItem != null && duration != null) {
-      // Обновляем только если длительность действительно изменилась
       if (_currentMediaItem!.duration != duration) {
-        _currentMediaItem = _currentMediaItem!.copyWith(
-          duration: duration,
-        );
+        _currentMediaItem = _currentMediaItem!.copyWith(duration: duration);
         mediaItem.add(_currentMediaItem!);
       }
     }
   }
 
-  void _onAudioServiceUpdate() {
-    final metadata = audioPlayerService.currentMetadata;
-    final player = audioPlayerService.getPlayer();
+  // ==================== ОБНОВЛЕНИЕ МЕТАДАННЫХ (С ДЕБАНСОМ) ====================
 
-    if (metadata != null) {
-      // Проверяем, действительно ли изменились метаданные
-      final shouldUpdate = _currentMediaItem == null ||
-          _currentMediaItem!.title != metadata.title ||
-          _currentMediaItem!.artist != metadata.artist ||
-          _currentMediaItem!.album != (metadata.album ?? 'J-Rock Radio') ||
-          (_currentMediaItem!.artUri?.toString() ?? '') !=
-              (_getArtUriForPlatform(
-                      audioPlayerService.getPreparedArtUrl(metadata.artUrl))
-                  ?.toString() ??
-                  '');
-      if (shouldUpdate) {
-        updateMetadata(metadata);
-      }
+  Future<void> updateMetadata(AudioMetadata metadata) async {
+    debugPrint('🎵 [Handler] updateMetadata called: ${metadata.title}');
+
+    // Для радио – фиксированный ID, чтобы не пересоздавать уведомление
+    final bool isRadio = !audioPlayerService.isPodcastMode;
+    final String mediaId = isRadio
+        ? 'jrr_live_stream'
+        : 'podcast_${audioPlayerService.currentEpisode?.id ?? DateTime.now().millisecondsSinceEpoch}';
+
+    final Duration? duration = audioPlayerService.isPodcastMode
+        ? audioPlayerService.currentEpisode?.duration
+        : null;
+
+    // Подготовленный URL обложки (без cache-buster)
+    final String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
+    final Uri? artUri = _getArtUriForPlatform(preparedArtUrl);
+    final bool isDefaultCover = metadata.artUrl.isEmpty ||
+        metadata.artUrl == 'assets/images/default_cover.png' ||
+        metadata.artUrl == AudioMetadata.defaultCoverUrl;
+
+    // --- Если обложка уже известна (не дефолтная), обновляем сразу ---
+    if (!isDefaultCover) {
+      _cancelPendingMetadata();
+      _applyMediaItem(mediaId, metadata, artUri, duration);
+      return;
     }
 
-    if (player != null) {
-      final actualPlayingState = audioPlayerService.isPlaying;
-      // Обновляем playbackState только если изменилось состояние
-      if (playbackState.value.playing != actualPlayingState) {
-        updatePlaybackState(actualPlayingState);
-      }
-      _setupStreams(); // переподключаем стримы (можно оптимизировать, но оставим)
+    // --- Если пришла дефолтная обложка, возможно, настоящая ещё не найдена ---
+    // Проверяем, действительно ли изменился трек
+    if (_currentMediaItem != null &&
+        _currentMediaItem!.title == metadata.title &&
+        _currentMediaItem!.artist == metadata.artist) {
+      // Тот же трек – игнорируем дефолтную обложку, оставляем старую
+      debugPrint('🎵 [Handler] Same track, ignoring default cover');
+      return;
     }
+
+    // Новый трек: откладываем обновление, даём шанс найти обложку
+    _pendingMetadata = metadata;
+    _pendingMetadataTimer?.cancel();
+    _pendingMetadataTimer = Timer(_pendingTimeout, () {
+      debugPrint('⏰ [Handler] Pending metadata timeout – applying with default cover');
+      _applyMediaItem(mediaId, _pendingMetadata!, artUri, duration);
+      _pendingMetadata = null;
+    });
+
+    debugPrint('🎵 [Handler] Waiting for cover, current artUri: ${_currentMediaItem?.artUri}');
   }
 
-  void forceUpdateMediaItem() {
-    if (_currentMediaItem != null) {
-      // Создаем копию с полностью новым extras
-      MediaItem updatedItem = MediaItem(
-        id: _currentMediaItem!.id,
-        title: _currentMediaItem!.title,
-        artist: _currentMediaItem!.artist!,
-        album: _currentMediaItem!.album ?? 'J-Rock Radio',
-        artUri: _currentMediaItem!.artUri,
-        duration: _currentMediaItem!.duration,
-        extras: {
-          ..._currentMediaItem!.extras ?? {},
-          'forceUpdate': DateTime.now().millisecondsSinceEpoch,
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
-      );
-      
-      _currentMediaItem = updatedItem;
-      mediaItem.add(_currentMediaItem!);
-      
-      debugPrint('🔄 [Handler] Force updated MediaItem with artUri: ${_currentMediaItem!.artUri}');
-      
-      // Для iOS дополнительно обновляем состояние
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          playbackState.add(playbackState.value.copyWith(
-            updatePosition: playbackState.value.position,
-          ));
-        });
-      }
-      
-      // Для Android также принудительно обновляем состояние
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final currentState = playbackState.value;
-          playbackState.add(currentState.copyWith(
-            updatePosition: currentState.position,
-            bufferedPosition: currentState.bufferedPosition,
-          ));
-        });
-      }
-    }
-  }
-
+  /// Принудительное обновление обложки (вызывается, когда найдена реальная)
   Future<void> forceUpdateCover(String artUrl) async {
-    debugPrint('🔄 [Handler] Force updating cover: $artUrl');
-    
+    debugPrint('🔄 [Handler] Force update cover: $artUrl');
+
+    // Если есть ожидающие метаданные – применяем их с новой обложкой
+    if (_pendingMetadata != null) {
+      _cancelPendingMetadata();
+
+      final bool isRadio = !audioPlayerService.isPodcastMode;
+      final String mediaId = isRadio ? 'jrr_live_stream' : 
+          'podcast_${audioPlayerService.currentEpisode?.id ?? DateTime.now().millisecondsSinceEpoch}';
+
+      final String preparedArtUrl = audioPlayerService.getPreparedArtUrl(artUrl);
+      final Uri? newArtUri = _getArtUriForPlatform(preparedArtUrl);
+      final Duration? duration = audioPlayerService.isPodcastMode
+          ? audioPlayerService.currentEpisode?.duration
+          : null;
+
+      _applyMediaItem(mediaId, _pendingMetadata!, newArtUri, duration);
+      _pendingMetadata = null;
+      return;
+    }
+
+    // Нет ожидающих метаданных – обновляем только обложку у текущего MediaItem
     if (_currentMediaItem != null) {
-     // Получаем artUri с корректным cache-buster
-      Uri? newArtUri = _getArtUriForPlatform(artUrl);
-      
-      // Проверяем, изменилась ли обложка на самом деле
-      final currentArtUriStr = _currentMediaItem!.artUri?.toString() ?? '';
-      final newArtUriStr = newArtUri?.toString() ?? '';
-      if (currentArtUriStr == newArtUriStr) {
-        debugPrint('✅ [Handler] Cover unchanged, skipping update');
+      final Uri? newArtUri = _getArtUriForPlatform(artUrl);
+      if (_currentMediaItem!.artUri?.toString() == newArtUri?.toString()) {
+        debugPrint('✅ [Handler] Cover unchanged, skipping');
         return;
       }
 
-      MediaItem updatedItem = MediaItem(
-        id: _currentMediaItem!.id,
-        title: _currentMediaItem!.title,
-        artist: _currentMediaItem!.artist!,
-        album: _currentMediaItem!.album ?? 'J-Rock Radio',
+      final updatedItem = _currentMediaItem!.copyWith(
         artUri: newArtUri,
-        duration: _currentMediaItem!.duration,
         extras: {
-          ..._currentMediaItem!.extras ?? {},
-          'forceCoverUpdate': DateTime.now().millisecondsSinceEpoch,
-          'originalArtUrl': artUrl,
+          ...?_currentMediaItem!.extras,
+          'coverUpdatedAt': DateTime.now().millisecondsSinceEpoch, // только для логирования
         },
       );
-      
+
       _currentMediaItem = updatedItem;
       mediaItem.add(_currentMediaItem!);
-      
       debugPrint('✅ [Handler] Cover force updated to: $newArtUri');
     }
   }
 
-  Future<void> updateMetadata(AudioMetadata metadata) async {
-    debugPrint('🎵 [Handler] updateMetadata called with raw artUrl: ${metadata.artUrl}');
+  void _cancelPendingMetadata() {
+    _pendingMetadataTimer?.cancel();
+    _pendingMetadataTimer = null;
+    _pendingMetadata = null;
+  }
 
-    Duration? duration;
-    if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-      duration = audioPlayerService.currentEpisode?.duration;
-    }
+  void _applyMediaItem(String mediaId, AudioMetadata metadata, Uri? artUri, Duration? duration) {
+    final bool isRadio = !audioPlayerService.isPodcastMode;
 
-    // Получаем подготовленный URL
-    String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
-    debugPrint('🎵 [Handler] Prepared artUrl: $preparedArtUrl');
-    
-    // Для радио используем фиксированный ID для лучшей стабильности в уведомлениях
-    String mediaId;
-    bool isRadio = metadata.artist == 'Live Stream' || !audioPlayerService.isPodcastMode;
-    
-    if (isRadio) {
-      // Для радио используем фиксированный ID, но добавляем временную метку для уникальности
-      mediaId = 'jrr_live_stream_${DateTime.now().millisecondsSinceEpoch}';
-    } else {
-      // Для подкастов используем ID эпизода
-      mediaId = 'podcast_${audioPlayerService.currentEpisode?.id ?? DateTime.now().millisecondsSinceEpoch}';
-    }
-    
-    // Получаем artUri через унифицированный метод
-    Uri? artUri = _getArtUriForPlatform(preparedArtUrl);
-    
-    // Сравниваем с текущим MediaItem, чтобы избежать лишних обновлений
-    final title = metadata.title;
-    final artist = metadata.artist;
-    final album = metadata.album ?? 'J-Rock Radio';
-    final artUriStr = artUri?.toString() ?? '';
-    final currentArtUriStr = _currentMediaItem?.artUri?.toString() ?? '';
-    final currentTitle = _currentMediaItem?.title ?? '';
-    final currentArtist = _currentMediaItem?.artist ?? '';
-    final currentAlbum = _currentMediaItem?.album ?? '';
-    final currentDuration = _currentMediaItem?.duration;
-
-    bool metadataChanged = _currentMediaItem == null ||
-        currentTitle != title ||
-        currentArtist != artist ||
-        currentAlbum != album ||
-        currentArtUriStr != artUriStr ||
-        currentDuration != duration;
-
-    if (!metadataChanged) {
-      debugPrint('🎵 [Handler] Metadata unchanged, skipping update');
-      return;
-    }
-
-    MediaItem newMediaItem = MediaItem(
+    final newItem = MediaItem(
       id: mediaId,
-      title: title,
-      artist: artist,
-      album: album,
+      title: metadata.title,
+      artist: metadata.artist,
+      album: metadata.album ?? (isRadio ? 'Онлайн радио' : 'J-Rock Radio'),
       artUri: artUri,
       duration: duration,
       extras: {
         'isPodcast': audioPlayerService.isPodcastMode,
         'episodeId': audioPlayerService.currentEpisode?.id,
         'artUrlRaw': metadata.artUrl,
-        'artUrlPrepared': preparedArtUrl,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
         'isRadio': isRadio,
-        'forceUpdate': DateTime.now().millisecondsSinceEpoch,
+        // Убраны все динамические временные метки, которые меняются при каждом обновлении
       },
     );
 
-    _currentMediaItem = newMediaItem;
-    
-    // Принудительно обновляем медиа-элемент
+    // Сравниваем только значимые поля (всё, кроме extras)
+    if (_currentMediaItem != null &&
+        _currentMediaItem!.id == newItem.id &&
+        _currentMediaItem!.title == newItem.title &&
+        _currentMediaItem!.artist == newItem.artist &&
+        _currentMediaItem!.album == newItem.album &&
+        _currentMediaItem!.artUri?.toString() == newItem.artUri?.toString() &&
+        _currentMediaItem!.duration == newItem.duration) {
+      debugPrint('🎵 [Handler] MediaItem unchanged, skipping');
+      return;
+    }
+
+    _currentMediaItem = newItem;
     mediaItem.add(_currentMediaItem!);
-    
+    debugPrint('🎵 [Handler] MediaItem applied: ${_currentMediaItem!.artUri}');
+
     // Синхронизируем состояние воспроизведения
     final player = audioPlayerService.getPlayer();
-    if (player != null) {
-      updatePlaybackState(player.playing);
-    }
-    
-    debugPrint('🎵 [Handler] MediaItem updated with artUri: ${_currentMediaItem!.artUri}');
-    debugPrint('🎵 [Handler] MediaItem ID: ${_currentMediaItem!.id}');
-    
-    // Только для iOS — дополнительное принуждение
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        forceUpdateMediaItem();
-      });
-    }
+    if (player != null) updatePlaybackState(player.playing);
   }
 
-  // Метод для получения artUri с учетом платформы и кэширования
+  // ==================== ART URI (БЕЗ CACHE-BUSTER) ====================
+
   Uri? _getArtUriForPlatform(String artUrl) {
-    // Добавляем временную метку к URL для предотвращения кэширования
-    String cacheBusterArtUrl = artUrl;    
-    if (!artUrl.contains('?') && 
-        (artUrl.startsWith('http://') || artUrl.startsWith('https://'))) {
-      cacheBusterArtUrl = '$artUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+    // Используем оригинальный URL как ключ кэша (без добавления timestamp)
+    final String cacheKey = artUrl;
+
+    if (_artUriCache.containsKey(cacheKey)) {
+      return _artUriCache[cacheKey];
     }
-    
-    // Проверка кэша (с новым URL)
-    if (_artUriCache.containsKey(cacheBusterArtUrl)) {
-      return _artUriCache[cacheBusterArtUrl];
-    }
-    
-    // Проверяем, является ли это дефолтной обложкой
-    if (artUrl.isEmpty || 
-        artUrl == 'assets/images/default_cover.png' || 
+
+    if (artUrl.isEmpty ||
+        artUrl == 'assets/images/default_cover.png' ||
         artUrl == AudioMetadata.defaultCoverUrl) {
       final defaultUri = _getDefaultArtUri();
-      _artUriCache[cacheBusterArtUrl] = defaultUri;
+      _artUriCache[cacheKey] = defaultUri;
       return defaultUri;
     }
 
     try {
-      Uri result;      
-      // Для iOS: особый случай для asset путей
+      Uri result;
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-          result = Uri.parse(cacheBusterArtUrl);
+          result = Uri.parse(artUrl); // без cache-buster
         } else if (artUrl.startsWith('assets/')) {
-          // iOS ожидает: asset:///FlutterAssets/assets/...
           result = Uri.parse('asset:///FlutterAssets/$artUrl');
         } else if (artUrl.startsWith('asset://')) {
           result = Uri.parse(artUrl);
         } else {
-          // Для iOS возвращаем дефолтную обложку
           result = _getDefaultArtUri();
         }
       } else {
-        // Для Android и других платформ
         if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
-          result = Uri.parse(cacheBusterArtUrl);
+          result = Uri.parse(artUrl);
         } else if (artUrl.startsWith('assets/')) {
-          // Android ожидает: asset:///assets/...
           result = Uri.parse('asset:///$artUrl');
         } else if (artUrl.startsWith('asset://')) {
           result = Uri.parse(artUrl);
         } else {
-          // Для Android возвращаем дефолтную обложку
           result = _getDefaultArtUri();
         }
-      }      
-      _artUriCache[cacheBusterArtUrl] = result;
+      }
+      _artUriCache[cacheKey] = result;
       return result;
     } catch (e) {
       debugPrint('❌ Error creating artUri for $artUrl: $e');
       final defaultUri = _getDefaultArtUri();
-      _artUriCache[cacheBusterArtUrl] = defaultUri;
+      _artUriCache[cacheKey] = defaultUri;
       return defaultUri;
     }
   }
+
+  // ==================== PLAYBACK STATE ====================
 
   void updatePlaybackState(bool isPlaying) {
     final player = audioPlayerService.getPlayer();
@@ -450,8 +375,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final duration = player?.duration;
     final isPodcast = audioPlayerService.isPodcastMode;
 
-    // Системные действия (разрешённые)
-    Set<MediaAction> systemActions = {
+    final systemActions = <MediaAction>{
       MediaAction.seek,
       MediaAction.seekForward,
       MediaAction.seekBackward,
@@ -462,89 +386,70 @@ class AudioPlayerHandler extends BaseAudioHandler {
       MediaAction.stop,
     };
     if (!isPodcast) {
-      // Для радио убираем seek и переключение треков
       systemActions.remove(MediaAction.seek);
       systemActions.remove(MediaAction.skipToNext);
       systemActions.remove(MediaAction.skipToPrevious);
     }
 
-    // Динамические контролы – 30 секунд ТОЛЬКО для подкастов
-    final List<MediaControl> dynamicControls = [];
-    dynamicControls.add(const MediaControl(
+    final controls = <MediaControl>[];
+    controls.add(const MediaControl(
       androidIcon: 'drawable/ic_skip_previous',
       label: 'Предыдущий',
       action: MediaAction.skipToPrevious,
     ));
     if (isPodcast) {
-      dynamicControls.add(const MediaControl(
+      controls.add(const MediaControl(
         androidIcon: 'drawable/ic_rewind_30s',
         label: '30 секунд назад',
         action: MediaAction.rewind,
       ));
     }
-    if (!isPlaying) {
-      dynamicControls.add(const MediaControl(
-        androidIcon: 'drawable/ic_play',
-        label: 'Воспроизвести',
-        action: MediaAction.play,
-      ));
-    } else {
-      dynamicControls.add(const MediaControl(
-        androidIcon: 'drawable/ic_pause',
-        label: 'Пауза',
-        action: MediaAction.pause,
-      ));
-    }
+    controls.add(isPlaying
+        ? const MediaControl(
+            androidIcon: 'drawable/ic_pause',
+            label: 'Пауза',
+            action: MediaAction.pause,
+          )
+        : const MediaControl(
+            androidIcon: 'drawable/ic_play',
+            label: 'Воспроизвести',
+            action: MediaAction.play,
+          ));
     if (isPodcast) {
-      dynamicControls.add(const MediaControl(
+      controls.add(const MediaControl(
         androidIcon: 'drawable/ic_fast_forward_30s',
         label: '30 секунд вперед',
         action: MediaAction.fastForward,
       ));
     }
-    dynamicControls.add(const MediaControl(
+    controls.add(const MediaControl(
       androidIcon: 'drawable/ic_skip_next',
       label: 'Следующий',
       action: MediaAction.skipToNext,
     ));
-    dynamicControls.add(const MediaControl(
+    controls.add(const MediaControl(
       androidIcon: 'drawable/ic_stop',
       label: 'Стоп',
       action: MediaAction.stop,
     ));
 
-    // Компактные индексы для Android (всегда 3 кнопки)
-    List<int> compactIndices;
-    if (isPodcast) {
-      compactIndices = isPlaying ? [0, 3, 6] : [0, 2, 6];
-    } else {
-      compactIndices = [0, 1, 2];
-    }
+    final compactIndices = isPodcast
+        ? (isPlaying ? [0, 3, 6] : [0, 2, 6])
+        : [0, 1, 2];
 
-    // ProcessingState
     AudioProcessingState processingState = AudioProcessingState.idle;
     if (player != null) {
-      switch (player.processingState) {
-        case ProcessingState.idle:
-          processingState = AudioProcessingState.idle;
-          break;
-        case ProcessingState.loading:
-          processingState = AudioProcessingState.loading;
-          break;
-        case ProcessingState.buffering:
-          processingState = AudioProcessingState.buffering;
-          break;
-        case ProcessingState.ready:
-          processingState = AudioProcessingState.ready;
-          break;
-        case ProcessingState.completed:
-          processingState = AudioProcessingState.completed;
-          break;
-      }
+      processingState = switch (player.processingState) {
+        ProcessingState.idle => AudioProcessingState.idle,
+        ProcessingState.loading => AudioProcessingState.loading,
+        ProcessingState.buffering => AudioProcessingState.buffering,
+        ProcessingState.ready => AudioProcessingState.ready,
+        ProcessingState.completed => AudioProcessingState.completed,
+      };
     }
 
     playbackState.add(PlaybackState(
-      controls: dynamicControls,
+      controls: controls,
       systemActions: systemActions,
       androidCompactActionIndices: compactIndices,
       playing: isPlaying,
@@ -556,32 +461,32 @@ class AudioPlayerHandler extends BaseAudioHandler {
     ));
   }
 
-  void clearArtUriCache() {
-    _artUriCache.clear();
-    debugPrint('🔄 ArtUri cache cleared');
-  }
+  // ==================== ОБРАБОТЧИКИ СОБЫТИЙ СЕРВИСА ====================
 
-  void refreshArtUriForNewTrack(String newArtUrl) {
-    // Очищаем кэш для старого трека
-    if (_currentMediaItem?.extras?['artUrlRaw'] != null) {
-      final oldArtUrl = _currentMediaItem!.extras!['artUrlRaw'] as String;
-      if (_artUriCache.containsKey(oldArtUrl)) {
-        _artUriCache.remove(oldArtUrl);
-        debugPrint('🔄 Cleared artUri cache for old track: $oldArtUrl');
+  void _onAudioServiceUpdate() {
+    final metadata = audioPlayerService.currentMetadata;
+    final player = audioPlayerService.getPlayer();
+
+    if (metadata != null) {
+      // Проверяем, действительно ли изменился трек (по названию и исполнителю)
+      final trackChanged = _currentMediaItem == null ||
+          _currentMediaItem!.title != metadata.title ||
+          _currentMediaItem!.artist != metadata.artist;
+      if (trackChanged) {
+        updateMetadata(metadata);
       }
     }
-    
-    // Предзагружаем URI для нового трека
-    if (newArtUrl.isNotEmpty) {
-      _getArtUriForPlatform(newArtUrl);
-      debugPrint('🔄 Pre-cached artUri for new track: $newArtUrl');
+
+    if (player != null) {
+      if (playbackState.value.playing != player.playing) {
+        updatePlaybackState(player.playing);
+      }
+      _setupStreams();
     }
   }
 
-  void _updateMediaItem() {
+  void _updateInitialMediaItem() {
     final defaultCoverUrl = AudioMetadata.defaultCoverUrl;
-    debugPrint('🎵 _updateMediaItem with cover: $defaultCoverUrl');
-    
     _currentMediaItem = MediaItem(
       id: 'jrr_live_stream',
       title: 'J-Rock Radio',
@@ -594,214 +499,142 @@ class AudioPlayerHandler extends BaseAudioHandler {
     updatePlaybackState(false);
   }
 
-  @override
-  Future<void> play() async {
-    return _executeCommand(() async {
-      debugPrint('🎵 Background audio: play called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-      
-      if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
-        debugPrint('🎵 Background audio: service not initialized, initializing...');
-        await audioPlayerService.initialize();
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-      
-      final player = audioPlayerService.getPlayer();
-      final isCurrentlyPlaying = player?.playing ?? false;
-      
-      debugPrint('🎵 Background play: current playing state = $isCurrentlyPlaying');
-      debugPrint('🎵 Background play: isRadioPlaying = ${audioPlayerService.isRadioPlaying}');
-      debugPrint('🎵 Background play: isRadioPaused = ${audioPlayerService.isRadioPaused}');
-      debugPrint('🎵 Background play: isRadioStopped = ${audioPlayerService.isRadioStopped}');
-      
-      if (audioPlayerService.isPodcastMode && audioPlayerService.currentEpisode != null) {
-        debugPrint('🎵 Background: Playing podcast');
-        if (player != null && !player.playing) {
-          await player.play();
-          debugPrint('🎵 Podcast resumed from background');
-        }
-      } else {
-        debugPrint('🎵 Background: Handling radio play');
-        await audioPlayerService.playRadio();
-      }
-      
-      final newPlayingState = audioPlayerService.isPlaying;
-      debugPrint('🎵 Background: Updating playback state to $newPlayingState');
-      updatePlaybackState(newPlayingState);      
-    }, 'play');
+  // ==================== МЕТОДЫ ДЛЯ ВНЕШНЕГО ВЫЗОВА ====================
+
+  void forceUpdateMediaItem() {
+    // Устарело, оставлено для совместимости
   }
 
-  @override
-  Future<void> pause() async {
-    return _executeCommand(() async {
-      debugPrint('🎵 Background audio: pause called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-      
-      final player = audioPlayerService.getPlayer();
-      final wasPlaying = player?.playing ?? false;
-      
-      debugPrint('🎵 Background pause: player was playing = $wasPlaying');
-      
-      if (wasPlaying) {
-        await audioPlayerService.pause();
-        debugPrint('🎵 Background pause: audio paused successfully');
-      } else {
-        debugPrint('🎵 Background pause: player was already paused/stopped');
-      }
-      
-      updatePlaybackState(false);      
-    }, 'pause');
-  }
-    
   void forceUpdateUI(bool isPlaying) {
     updatePlaybackState(isPlaying);
   }
 
-  @override
-  Future<void> stop() async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: stop called, isPodcastMode: ${audioPlayerService.isPodcastMode}');
-      
-      if (audioPlayerService.isPodcastMode) {
-        await audioPlayerService.stopPodcast();
-      } else {
-        await audioPlayerService.stopRadio();
-      }
-      
-      updatePlaybackState(false);
-      _onAudioServiceUpdate();
-      
-    }, 'stop');
+  void clearArtUriCache() {
+    _artUriCache.clear();
   }
 
-  @override
-  Future<void> seek(Duration position) async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: seek to $position');
-      
-      if (audioPlayerService.isPodcastMode) {
-        await audioPlayerService.seekPodcast(position);
-      }      
-    }, 'seek');
+  void refreshArtUriForNewTrack(String newArtUrl) {
+    // Очистка кэша для старого трека
+    if (_currentMediaItem?.extras?['artUrlRaw'] != null) {
+      final oldArtUrl = _currentMediaItem!.extras!['artUrlRaw'] as String;
+      _artUriCache.remove(oldArtUrl);
+    }
+    if (newArtUrl.isNotEmpty) {
+      _getArtUriForPlatform(newArtUrl);
+    }
   }
 
-  @override
-  Future<void> skipToNext() async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: skipToNext');
-      
-      if (audioPlayerService.isPodcastMode) {
-        await audioPlayerService.playNextPodcast();
-      }      
-    }, 'skipToNext');
-  }
+  // ==================== КОМАНДЫ ====================
 
   @override
-  Future<void> skipToPrevious() async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: skipToPrevious');
-      
-      if (audioPlayerService.isPodcastMode) {
-        await audioPlayerService.playPreviousPodcast();
-      }      
-    }, 'skipToPrevious');
-  }
+  Future<void> play() => _executeCommand(() async {
+    debugPrint('🎵 Background: play');
+    if (!audioPlayerService.isInitialized || audioPlayerService.isDisposed) {
+      await audioPlayerService.initialize();
+    }
+    if (audioPlayerService.isPodcastMode) {
+      final player = audioPlayerService.getPlayer();
+      if (player != null && !player.playing) await player.play();
+    } else {
+      await audioPlayerService.playRadio();
+    }
+    updatePlaybackState(audioPlayerService.isPlaying);
+  }, 'play');
 
   @override
-  Future<void> rewind() async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: rewind');
-      
-      if (audioPlayerService.isPodcastMode) {
-        final player = audioPlayerService.getPlayer();
-        final currentPosition = player?.position ?? Duration.zero;
-        final newPosition = currentPosition - Duration(seconds: kPodcastRewindInterval.inSeconds);
-        if (newPosition > Duration.zero) {
-          await audioPlayerService.seekPodcast(newPosition);
-        } else {
-          await audioPlayerService.seekPodcast(Duration.zero);
-        }
-      }      
-    }, 'rewind');
-  }
+  Future<void> pause() => _executeCommand(() async {
+    debugPrint('🎵 Background: pause');
+    await audioPlayerService.pause();
+    updatePlaybackState(false);
+  }, 'pause');
 
   @override
-  Future<void> fastForward() async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: fastForward');
-      
-      if (audioPlayerService.isPodcastMode) {
-        final player = audioPlayerService.getPlayer();
-        final currentPosition = player?.position ?? Duration.zero;
-        final duration = player?.duration ?? const Duration(hours: 1);
-        final newPosition = currentPosition + Duration(seconds: kPodcastFastForwardInterval.inSeconds);
-        if (newPosition < duration) {
-          await audioPlayerService.seekPodcast(newPosition);
-        } else {
-          await audioPlayerService.seekPodcast(duration - const Duration(seconds: 1));
-        }
-      }      
-    }, 'fastForward');
-  }
+  Future<void> stop() => _executeCommand(() async {
+    debugPrint('Background: stop');
+    if (audioPlayerService.isPodcastMode) {
+      await audioPlayerService.stopPodcast();
+    } else {
+      await audioPlayerService.stopRadio();
+    }
+    updatePlaybackState(false);
+    _onAudioServiceUpdate();
+  }, 'stop');
 
   @override
-  Future<void> playMediaItem(MediaItem mediaItem) async {
-    return _executeCommand(() async {
-      debugPrint('Background audio: playMediaItem ${mediaItem.title}');
-      
-      this.mediaItem.add(mediaItem);
-      playbackState.add(playbackState.value.copyWith(
-        playing: true,
-        processingState: AudioProcessingState.ready,
-        controls: const [
-          MediaControl(
-            androidIcon: 'drawable/ic_skip_previous',
-            label: 'Предыдущий',
-            action: MediaAction.skipToPrevious,
-          ),
-          MediaControl(
-            androidIcon: 'drawable/ic_pause',
-            label: 'Пауза',
-            action: MediaAction.pause,
-          ),
-          MediaControl(
-            androidIcon: 'drawable/ic_skip_next',
-            label: 'Следующий',
-            action: MediaAction.skipToNext,
-          ),
-          MediaControl(
-            androidIcon: 'drawable/ic_stop',
-            label: 'Стоп',
-            action: MediaAction.stop,
-          ),
-        ],
-      ));      
-    }, 'playMediaItem');
-  }
+  Future<void> seek(Duration position) => _executeCommand(() async {
+    debugPrint('Background: seek to $position');
+    if (audioPlayerService.isPodcastMode) {
+      await audioPlayerService.seekPodcast(position);
+    }
+  }, 'seek');
+
+  @override
+  Future<void> skipToNext() => _executeCommand(() async {
+    debugPrint('Background: skipToNext');
+    if (audioPlayerService.isPodcastMode) {
+      await audioPlayerService.playNextPodcast();
+    }
+  }, 'skipToNext');
+
+  @override
+  Future<void> skipToPrevious() => _executeCommand(() async {
+    debugPrint('Background: skipToPrevious');
+    if (audioPlayerService.isPodcastMode) {
+      await audioPlayerService.playPreviousPodcast();
+    }
+  }, 'skipToPrevious');
+
+  @override
+  Future<void> rewind() => _executeCommand(() async {
+    debugPrint('Background: rewind');
+    if (audioPlayerService.isPodcastMode) {
+      final player = audioPlayerService.getPlayer();
+      final pos = (player?.position ?? Duration.zero) - kPodcastRewindInterval;
+      await audioPlayerService.seekPodcast(pos > Duration.zero ? pos : Duration.zero);
+    }
+  }, 'rewind');
+
+  @override
+  Future<void> fastForward() => _executeCommand(() async {
+    debugPrint('Background: fastForward');
+    if (audioPlayerService.isPodcastMode) {
+      final player = audioPlayerService.getPlayer();
+      final pos = (player?.position ?? Duration.zero) + kPodcastFastForwardInterval;
+      final dur = player?.duration ?? const Duration(hours: 1);
+      await audioPlayerService.seekPodcast(pos < dur ? pos : dur - const Duration(seconds: 1));
+    }
+  }, 'fastForward');
+
+  @override
+  Future<void> playMediaItem(MediaItem mediaItem) => _executeCommand(() async {
+    debugPrint('Background: playMediaItem ${mediaItem.title}');
+    this.mediaItem.add(mediaItem);
+    playbackState.add(playbackState.value.copyWith(
+      playing: true,
+      processingState: AudioProcessingState.ready,
+    ));
+  }, 'playMediaItem');
 
   @override
   Future<void> onTaskRemoved() async {
     await super.onTaskRemoved();
     _cleanupResources();
   }
-  
+
   void _cleanupResources() {
     _resetCommandLock();
     _commandTimeoutTimer?.cancel();
-    _commandTimeoutTimer = null;
     _playbackStateDebounceTimer?.cancel();
-    _playbackStateDebounceTimer = null;
-    
+    _cancelPendingMetadata();
+
     audioPlayerService.removeListener(_onAudioServiceUpdate);
-    
+
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _playingSubscription?.cancel();
     _processingSubscription?.cancel();
-    
-    _positionSubscription = null;
-    _durationSubscription = null;
-    _playingSubscription = null;
-    _processingSubscription = null;
-    
-    debugPrint('AudioPlayerHandler resources cleaned up');
+    _positionSubscription = _durationSubscription = _playingSubscription = _processingSubscription = null;
+
+    debugPrint('AudioPlayerHandler cleaned up');
   }
 }
