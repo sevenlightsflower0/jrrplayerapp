@@ -19,6 +19,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   StreamSubscription<ProcessingState>? _processingSubscription;
   bool _isHandlingControl = false;
   Timer? _commandTimeoutTimer;
+  Timer? _playbackStateDebounceTimer; // Для дебаунса обновлений состояния
 
   // Кэш для быстрого доступа к арт-URI
   final Map<String, Uri> _artUriCache = {};
@@ -142,28 +143,27 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       _playingSubscription = player.playingStream.listen((isPlaying) {
         debugPrint('Background: playingStream changed to $isPlaying');
-        
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!audioPlayerService.isDisposed) {
-            updatePlaybackState(isPlaying);
-            audioPlayerService.notifyListenersSafe();
-          }
-        });
+        _debouncedUpdatePlaybackState(isPlaying);
       });
       
       _processingSubscription = player.processingStateStream.listen((state) {
         debugPrint('Background: processingState changed to $state');
-        
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!audioPlayerService.isDisposed) {
-            updatePlaybackState(player.playing);
-            audioPlayerService.notifyListenersSafe();
-          }
-        });
+        // Для изменения processingState тоже используем дебаунс
+        _debouncedUpdatePlaybackState(player.playing);
       });
     }
   }
 
+  // Дебаунс для частых обновлений состояния (играет/пауза/буферизация)
+  void _debouncedUpdatePlaybackState(bool isPlaying) {
+    _playbackStateDebounceTimer?.cancel();
+    _playbackStateDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!audioPlayerService.isDisposed) {
+        updatePlaybackState(isPlaying);
+        audioPlayerService.notifyListenersSafe();
+      }
+    });		 
+  }
   void _updatePlaybackPosition(Duration position) {
     playbackState.add(playbackState.value.copyWith(
       updatePosition: position,
@@ -172,25 +172,43 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   void _updatePlaybackDuration(Duration? duration) {
     if (_currentMediaItem != null && duration != null) {
-      _currentMediaItem = _currentMediaItem!.copyWith(
-        duration: duration,
-      );
-      mediaItem.add(_currentMediaItem!);
+      // Обновляем только если длительность действительно изменилась
+      if (_currentMediaItem!.duration != duration) {
+        _currentMediaItem = _currentMediaItem!.copyWith(
+          duration: duration,
+        );
+        mediaItem.add(_currentMediaItem!);
+      }
     }
   }
 
   void _onAudioServiceUpdate() {
     final metadata = audioPlayerService.currentMetadata;
     final player = audioPlayerService.getPlayer();
-    
+
     if (metadata != null) {
-      updateMetadata(metadata);
+      // Проверяем, действительно ли изменились метаданные
+      final shouldUpdate = _currentMediaItem == null ||
+          _currentMediaItem!.title != metadata.title ||
+          _currentMediaItem!.artist != metadata.artist ||
+          _currentMediaItem!.album != (metadata.album ?? 'J-Rock Radio') ||
+          (_currentMediaItem!.artUri?.toString() ?? '') !=
+              (_getArtUriForPlatform(
+                      audioPlayerService.getPreparedArtUrl(metadata.artUrl))
+                  ?.toString() ??
+                  '');
+      if (shouldUpdate) {
+        updateMetadata(metadata);
+      }
     }
-    
+
     if (player != null) {
       final actualPlayingState = audioPlayerService.isPlaying;
-      updatePlaybackState(actualPlayingState);
-      _setupStreams();
+      // Обновляем playbackState только если изменилось состояние
+      if (playbackState.value.playing != actualPlayingState) {
+        updatePlaybackState(actualPlayingState);
+      }
+      _setupStreams(); // переподключаем стримы (можно оптимизировать, но оставим)
     }
   }
 
@@ -242,9 +260,17 @@ class AudioPlayerHandler extends BaseAudioHandler {
     debugPrint('🔄 [Handler] Force updating cover: $artUrl');
     
     if (_currentMediaItem != null) {
-      // Получаем artUri с корректным cache-buster (уже есть в _getArtUriForPlatform)
+     // Получаем artUri с корректным cache-buster
       Uri? newArtUri = _getArtUriForPlatform(artUrl);
       
+      // Проверяем, изменилась ли обложка на самом деле
+      final currentArtUriStr = _currentMediaItem!.artUri?.toString() ?? '';
+      final newArtUriStr = newArtUri?.toString() ?? '';
+      if (currentArtUriStr == newArtUriStr) {
+        debugPrint('✅ [Handler] Cover unchanged, skipping update');
+        return;
+      }
+
       MediaItem updatedItem = MediaItem(
         id: _currentMediaItem!.id,
         title: _currentMediaItem!.title,
@@ -293,12 +319,34 @@ class AudioPlayerHandler extends BaseAudioHandler {
     // Получаем artUri через унифицированный метод
     Uri? artUri = _getArtUriForPlatform(preparedArtUrl);
     
-    // Создаем MediaItem с правильным artUri
+    // Сравниваем с текущим MediaItem, чтобы избежать лишних обновлений
+    final title = metadata.title;
+    final artist = metadata.artist;
+    final album = metadata.album ?? 'J-Rock Radio';
+    final artUriStr = artUri?.toString() ?? '';
+    final currentArtUriStr = _currentMediaItem?.artUri?.toString() ?? '';
+    final currentTitle = _currentMediaItem?.title ?? '';
+    final currentArtist = _currentMediaItem?.artist ?? '';
+    final currentAlbum = _currentMediaItem?.album ?? '';
+    final currentDuration = _currentMediaItem?.duration;
+
+    bool metadataChanged = _currentMediaItem == null ||
+        currentTitle != title ||
+        currentArtist != artist ||
+        currentAlbum != album ||
+        currentArtUriStr != artUriStr ||
+        currentDuration != duration;
+
+    if (!metadataChanged) {
+      debugPrint('🎵 [Handler] Metadata unchanged, skipping update');
+      return;
+    }
+
     MediaItem newMediaItem = MediaItem(
       id: mediaId,
-      title: metadata.title,
-      artist: metadata.artist,
-      album: metadata.album ?? 'J-Rock Radio',
+      title: title,
+      artist: artist,
+      album: album,
       artUri: artUri,
       duration: duration,
       extras: {
@@ -337,8 +385,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   // Метод для получения artUri с учетом платформы и кэширования
   Uri? _getArtUriForPlatform(String artUrl) {
     // Добавляем временную метку к URL для предотвращения кэширования
-    String cacheBusterArtUrl = artUrl;
-    
+    String cacheBusterArtUrl = artUrl;    
     if (!artUrl.contains('?') && 
         (artUrl.startsWith('http://') || artUrl.startsWith('https://'))) {
       cacheBusterArtUrl = '$artUrl?t=${DateTime.now().millisecondsSinceEpoch}';
@@ -359,8 +406,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
 
     try {
-      Uri result;
-      
+      Uri result;      
       // Для iOS: особый случай для asset путей
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         if (artUrl.startsWith('http://') || artUrl.startsWith('https://')) {
@@ -387,8 +433,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
           // Для Android возвращаем дефолтную обложку
           result = _getDefaultArtUri();
         }
-      }
-      
+      }      
       _artUriCache[cacheBusterArtUrl] = result;
       return result;
     } catch (e) {
@@ -534,7 +579,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _updateMediaItem() {
-    const defaultCoverUrl = AudioMetadata.defaultCoverUrl;
+    final defaultCoverUrl = AudioMetadata.defaultCoverUrl;
     debugPrint('🎵 _updateMediaItem with cover: $defaultCoverUrl');
     
     _currentMediaItem = MediaItem(
@@ -581,8 +626,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       final newPlayingState = audioPlayerService.isPlaying;
       debugPrint('🎵 Background: Updating playback state to $newPlayingState');
-      updatePlaybackState(newPlayingState);
-      
+      updatePlaybackState(newPlayingState);      
     }, 'play');
   }
 
@@ -603,8 +647,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         debugPrint('🎵 Background pause: player was already paused/stopped');
       }
       
-      updatePlaybackState(false);
-      
+      updatePlaybackState(false);      
     }, 'pause');
   }
     
@@ -636,8 +679,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.seekPodcast(position);
-      }
-      
+      }      
     }, 'seek');
   }
 
@@ -648,8 +690,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.playNextPodcast();
-      }
-      
+      }      
     }, 'skipToNext');
   }
 
@@ -660,8 +701,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       
       if (audioPlayerService.isPodcastMode) {
         await audioPlayerService.playPreviousPodcast();
-      }
-      
+      }      
     }, 'skipToPrevious');
   }
 
@@ -679,8 +719,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         } else {
           await audioPlayerService.seekPodcast(Duration.zero);
         }
-      }
-      
+      }      
     }, 'rewind');
   }
 
@@ -699,8 +738,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         } else {
           await audioPlayerService.seekPodcast(duration - const Duration(seconds: 1));
         }
-      }
-      
+      }      
     }, 'fastForward');
   }
 
@@ -735,8 +773,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
             action: MediaAction.stop,
           ),
         ],
-      ));
-      
+      ));      
     }, 'playMediaItem');
   }
 
@@ -750,6 +787,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
     _resetCommandLock();
     _commandTimeoutTimer?.cancel();
     _commandTimeoutTimer = null;
+    _playbackStateDebounceTimer?.cancel();
+    _playbackStateDebounceTimer = null;
     
     audioPlayerService.removeListener(_onAudioServiceUpdate);
     
