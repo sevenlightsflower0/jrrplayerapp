@@ -1,6 +1,5 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
 import 'package:jrrplayerapp/audio/audio_constants.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'dart:async';
@@ -384,7 +383,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final player = audioPlayerService.getPlayer();
     final isPodcast = audioPlayerService.isPodcastMode;
 
-    // For radio: position is always 0, duration null (no seekbar)
+    // --- Radio → position = 0, no seek actions ---
     final position = isPodcast && player != null ? player.position : Duration.zero;
     final duration = isPodcast ? player?.duration : null;
 
@@ -400,7 +399,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
       MediaAction.stop,
     };
     if (!isPodcast) {
+      // Radio: remove everything that implies seeking or playlist navigation
       systemActions.remove(MediaAction.seek);
+      systemActions.remove(MediaAction.seekForward);
+      systemActions.remove(MediaAction.seekBackward);
       systemActions.remove(MediaAction.skipToNext);
       systemActions.remove(MediaAction.skipToPrevious);
     }
@@ -515,7 +517,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _updateInitialMediaItem() {
-    final defaultCoverUrl = AudioMetadata.defaultCoverUrl;
+    const defaultCoverUrl = AudioMetadata.defaultCoverUrl;
     _currentMediaItem = MediaItem(
       id: 'jrr_live_stream',
       title: 'J-Rock Radio',
