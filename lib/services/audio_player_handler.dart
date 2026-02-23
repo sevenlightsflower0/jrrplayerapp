@@ -18,7 +18,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   // --- Ожидающие метаданные (ещё без обложки) ---
   AudioMetadata? _pendingMetadata;
   Timer? _pendingMetadataTimer;
-  static const Duration _pendingTimeout = Duration(seconds: 2);
+  static const Duration _pendingTimeout = Duration(seconds: 5);
 
   // --- Подписки на стримы плеера ---
   StreamSubscription<Duration>? _positionSubscription;
@@ -189,7 +189,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   Future<void> updateMetadata(AudioMetadata metadata) async {
     debugPrint('🎵 [Handler] updateMetadata called: ${metadata.title}');
 
-    // Для радио – фиксированный ID, чтобы не пересоздавать уведомление
     final bool isRadio = !audioPlayerService.isPodcastMode;
     final String mediaId = isRadio
         ? 'jrr_live_stream'
@@ -199,7 +198,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
         ? audioPlayerService.currentEpisode?.duration
         : null;
 
-    // Подготовленный URL обложки (без cache-buster)
     final String preparedArtUrl = audioPlayerService.getPreparedArtUrl(metadata.artUrl);
     final Uri? artUri = _getArtUriForPlatform(preparedArtUrl);
     final bool isDefaultCover = metadata.artUrl.isEmpty ||
@@ -213,26 +211,36 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return;
     }
 
-    // --- Если пришла дефолтная обложка, возможно, настоящая ещё не найдена ---
-    // Проверяем, действительно ли изменился трек
-    if (_currentMediaItem != null &&
-        _currentMediaItem!.title == metadata.title &&
-        _currentMediaItem!.artist == metadata.artist) {
-      // Тот же трек – игнорируем дефолтную обложку, оставляем старую
-      debugPrint('🎵 [Handler] Same track, ignoring default cover');
+    // --- Дефолтная обложка ---
+    // Проверяем, не ожидаем ли мы уже этот трек
+    if (_pendingMetadata != null &&
+        _pendingMetadata!.title == metadata.title &&
+        _pendingMetadata!.artist == metadata.artist) {
+      // Тот же трек – таймер уже запущен, ничего не делаем
+      debugPrint('🎵 [Handler] Same pending track, keeping timer');
       return;
     }
 
-    // Новый трек: откладываем обновление, даём шанс найти обложку
+    // Проверяем, может это текущий трек (уже имеет обложку, возможно реальную)
+    if (_currentMediaItem != null &&
+        _currentMediaItem!.title == metadata.title &&
+        _currentMediaItem!.artist == metadata.artist) {
+      debugPrint('🎵 [Handler] Same as current, ignoring default cover');
+      return;
+    }
+
+    // Новый трек: отменяем предыдущий таймер и запускаем новый
+    _cancelPendingMetadata();
     _pendingMetadata = metadata;
-    _pendingMetadataTimer?.cancel();
     _pendingMetadataTimer = Timer(_pendingTimeout, () {
       debugPrint('⏰ [Handler] Pending metadata timeout – applying with default cover');
-      _applyMediaItem(mediaId, _pendingMetadata!, artUri, duration);
-      _pendingMetadata = null;
+      if (_pendingMetadata != null) {
+        _applyMediaItem(mediaId, _pendingMetadata!, artUri, duration);
+        _pendingMetadata = null;
+      }
     });
 
-    debugPrint('🎵 [Handler] Waiting for cover, current artUri: ${_currentMediaItem?.artUri}');
+    debugPrint('🎵 [Handler] Waiting for cover');
   }
 
   /// Принудительное обновление обложки (вызывается, когда найдена реальная)
