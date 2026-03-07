@@ -1,0 +1,40 @@
+workflows:
+  ios-workflow:
+    name: iOS Build Workflow
+    environment:
+      groups: [] 
+      vars:
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install Flutter Dependencies
+        script: |
+          flutter pub get
+      - name: Fix CocoaPods Source
+        script: |
+          cd ios
+          # Удаляем проблемный trunk репозиторий
+          pod repo remove trunk || true
+          # Добавляем рабочий источник
+          pod repo add master https://github.com/CocoaPods/Specs.git
+          # Обновляем Podfile чтобы использовать правильный источник
+          if ! grep -q "source 'https://github.com/CocoaPods/Specs.git'" Podfile; then
+            sed -i '' '1i\
+          source '\''https://github.com/CocoaPods/Specs.git'\''\
+          ' Podfile
+          fi
+      - name: Install CocoaPods Dependencies
+        script: |
+          cd ios
+          pod install --repo-update --verbose
+      - name: Build iOS
+        script: |
+          flutter build ios --debug --no-codesign
+    artifacts:
+      - build/ios/iphoneos/*.app
+    publishing:
+      email:
+        recipients:
+          - your-email@example.com

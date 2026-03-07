@@ -1,0 +1,26 @@
+name: Setup iOS Certificates Minimal
+
+on: workflow_dispatch
+
+jobs:
+  setup:
+    runs-on: macos-14
+    
+    steps:
+      - name: Install fastlane
+        run: gem install fastlane -NV
+        
+      - name: Setup environment and run match
+        env:
+          FASTLANE_USER: ${{ secrets.APPLE_ID_USERNAME }}
+          FASTLANE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          SPACESHIP_AVOID_XCODE_API: "true"
+        run: |
+          # Run match with minimal options
+          fastlane match appstore \
+            --git_url "https://github.com/sevenlightsflower0/ios-certificates.git" \
+            --app_identifier "com.example.jRockRadioFlutter" \
+            --readonly false \
+            --verbose

@@ -1,0 +1,62 @@
+name: jrrplayerapp
+description: J-Rock Radio iOS App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  audioplayers: ^5.2.1
+  audio_service: ^0.18.18
+  audio_session: ^0.1.18
+  just_audio: ^0.9.36 
+  connectivity_plus: ^5.0.1
+  shared_preferences: ^2.2.2
+  just_audio_background: ^0.0.1-beta.17  
+  http: ^0.13.5
+  xml: ^6.4.0
+  html: ^0.15.1
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.0
+  provider: ^6.1.1
+  universal_io: ^2.2.0
+  url_launcher: ^6.1.11
+  webview_flutter: ^4.4.2
+  webview_flutter_android: ^4.10.5
+  webview_flutter_wkwebview: ^3.1.1
+  package_info_plus: ^8.0.0   # для получения packageName на Android
+  path_provider: ^2.1.5       # для iOS: получение Documents директории
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.14.3
+  flutter_lints: ^3.0.0
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/app_icon.png"
+  # Для Android (адаптивные иконки)
+  adaptive_icon_background: "#ffffff"   # или укажите путь к фоновому изображению
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  # Для десктопа (Windows, macOS)
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
+    - assets/images/default_cover.png
+    - assets/images/

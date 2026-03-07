@@ -1,0 +1,76 @@
+name: 0_build_7_days_test_IPA_for_iOS
+
+on:
+  workflow_dispatch:  # Ручной запуск
+
+jobs:
+  build-ios:
+    name: 🎉 iOS Build (7-days free testing)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+
+      - run: flutter clean  # Очистка для избежания кэш-проблем
+      - run: flutter pub get
+
+      # Обновление pod repo (с retry)
+      - name: Update CocoaPods repository with retry
+        working-directory: ios
+        run: |
+          for i in {1..3}; do
+            echo "Attempt $i: Updating CocoaPods repository..."
+            pod repo update && break
+            sleep 5
+          done
+
+      # Pod install (с retry)
+      - name: Install CocoaPods dependencies with retry
+        working-directory: ios
+        run: |
+          for i in {1..5}; do
+            echo "Attempt $i: Running pod install..."
+            pod install --repo-update && break
+            echo "Retry in 10s..."
+            sleep 10
+          done
+
+      - run: flutter build ios --release --no-codesign
+
+      - name: Create Payload and IPA
+        working-directory: build/ios/iphoneos
+        run: |
+          mkdir Payload
+          mv Runner.app Payload/
+          zip -qq -r -9 ../FlutterIpaExport.ipa Payload/
+          
+          # Проверка создания файла
+          echo "Checking if IPA file was created..."
+          ls -la ../FlutterIpaExport.ipa || echo "IPA file not found!"
+          
+      - name: Check IPA size
+        run: |
+          if [ -f "build/ios/FlutterIpaExport.ipa" ]; then
+            SIZE=$(stat -f%z "build/ios/FlutterIpaExport.ipa")
+            echo "IPA file size: $((SIZE / 1024 / 1024)) MB"
+          else
+            echo "ERROR: IPA file not found!"
+            exit 1
+          fi
+
+      - name: Update outdated packages
+        run: |
+          flutter pub outdated
+          # Если хотите автоматически обновлять, раскомментируйте:
+          # flutter pub upgrade --major-versions
+
+      - name: Upload IPA as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlutterIpaExport.ipa
+          path: build/ios/FlutterIpaExport.ipa  # Путь исправлен
+          retention-days: 7

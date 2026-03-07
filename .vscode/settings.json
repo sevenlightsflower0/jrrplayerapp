@@ -1,0 +1,7 @@
+{
+    "yaml.schemaStore.enable": false,
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "audioCues.enabled": "off",
+    "html.audioCues.enabled": false,
+    "accessibility.signalOptions.volume": 0
+}

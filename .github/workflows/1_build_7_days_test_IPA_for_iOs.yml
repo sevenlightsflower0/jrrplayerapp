@@ -1,0 +1,54 @@
+name: iOS Build with Temp Team
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: subosito/flutter-action@v2
+      
+      - name: Setup iOS signing with temp team
+        run: |
+          cd ios
+          # Создаем простой ExportOptions.plist без heredoc
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > ExportOptions.plist
+          echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> ExportOptions.plist
+          echo '<plist version="1.0">' >> ExportOptions.plist
+          echo '<dict>' >> ExportOptions.plist
+          echo '    <key>method</key>' >> ExportOptions.plist
+          echo '    <string>development</string>' >> ExportOptions.plist
+          echo '    <key>teamID</key>' >> ExportOptions.plist
+          echo '    <string></string>' >> ExportOptions.plist
+          echo '</dict>' >> ExportOptions.plist
+          echo '</plist>' >> ExportOptions.plist
+          
+          # Отключаем подпись
+          sed -i '' 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*/PROVISIONING_PROFILE_SPECIFIER = "";/g' Runner.xcodeproj/project.pbxproj
+          
+      - run: flutter pub get
+      - run: cd ios && pod install
+      
+      - name: Try to build IPA (may fail)
+        continue-on-error: true
+        run: |
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release clean archive -archivePath build/Runner.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+          xcodebuild -exportArchive -archivePath build/Runner.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
+          
+      - name: Always build for simulator
+        run: flutter build ios --simulator --debug --no-codesign
+        
+      - name: Archive simulator build
+        run: cd build/ios/iphonesimulator && zip -r simulator.zip Runner.app
+        
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iOS-Builds
+          path: |
+            ios/build/*.ipa
+            build/ios/iphonesimulator/simulator.zip
+          if-no-files-found: warn

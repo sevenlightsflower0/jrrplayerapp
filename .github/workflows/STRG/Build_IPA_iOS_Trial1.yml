@@ -1,0 +1,51 @@
+name: Build iOS with Free Provisioning (for real device)
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: macos-14
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.3
+
+      - run: flutter pub get
+
+      - name: Setup Xcode for automatic signing
+        run: |
+          # Enable automatic signing (free Apple ID)
+          cd ios
+          xcodebuild -project Runner.xcodeproj \
+            -scheme Runner \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -allowProvisioningDeviceRegistration \
+            CODE_SIGN_STYLE="Automatic" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER=""
+            
+      - name: Build iOS app
+        run: |
+          # Build with automatic signing
+          flutter build ios --debug --no-codesign
+          
+      - name: Create IPA manually
+        run: |
+          cd build/ios/iphoneos
+          
+          # Create Payload directory
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          
+          # Create IPA file
+          zip -r jrrplayerapp.ipa Payload
+          
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: jrrplayerapp-debug.ipa
+          path: build/ios/iphoneos/jrrplayerapp.ipa
