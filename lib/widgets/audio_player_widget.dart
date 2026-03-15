@@ -377,7 +377,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   onPressed: _audioService.isPodcastMode
                       ? _playPreviousPodcast
                       : null,
-                  color: _audioService.isPodcastMode ? Colors.white : Colors.grey,
+                  color: _audioService.isPodcastMode ? AppColors.customWhite : AppColors.customGrey,
                 ),
                 SizedBox(width: mediumSpacing),
 
@@ -393,7 +393,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                         debugPrint('🎵 Button pressed, _isToggling: $_isToggling');
                         await _togglePlayPause();
                       },
-                      color: Colors.white,
+                      color: AppColors.customWhite,
                     );
                   },
                 ),
@@ -404,7 +404,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   onPressed: _audioService.isPodcastMode
                       ? _playNextPodcast
                       : null,
-                  color: _audioService.isPodcastMode ? AppColors.customWhite : Colors.grey,
+                  color: _audioService.isPodcastMode ? AppColors.customWhite : AppColors.customGrey,
                 ),
               ],
             ),
@@ -440,7 +440,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                             _setVolume(value);
                           },
                           activeColor: Theme.of(context).colorScheme.primary,
-                          inactiveColor: Colors.grey[700],
+                          inactiveColor: AppColors.customWhiteTransp,
                         );
                       },
                     ),
@@ -498,7 +498,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                         borderRadius: BorderRadius.circular(8),
                         boxShadow: const [
                           BoxShadow(
-                            color: Colors.transparent, // полностью прозрачная подсветка
+                            color: AppColors.customTransp, // полностью прозрачная подсветка
                             blurRadius: 6,
                             offset: Offset(0, 3),
                           ),
@@ -557,7 +557,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
           if (loadingProgress == null) return child;
           // Упрощенный индикатор загрузки
           return Container(
-            color: Colors.grey[300],
+            color: AppColors.customWhite,
             child: Center(
               child: SizedBox(
                 width: 20,

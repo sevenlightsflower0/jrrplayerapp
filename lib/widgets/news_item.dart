@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/models/news.dart';
 
 class NewsItem extends StatelessWidget {
@@ -9,7 +10,7 @@ class NewsItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
+      color: AppColors.customTransp,
       child: InkWell(
         onTap: () => _openNewsDetail(context),
         child: Padding(
@@ -19,7 +20,7 @@ class NewsItem extends StatelessWidget {
             children: [
               Text(
                 news.date,
-                style: TextStyle(color: Colors.green[400], fontSize: 12),
+                style: const TextStyle(color: AppColors.customLightGreen, fontSize: 12),
               ),
               if (news.imageUrl.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -33,7 +34,7 @@ class NewsItem extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 news.description,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: const TextStyle(color: AppColors.customWhite, fontSize: 14),
               ),
             ],
           ),
@@ -65,7 +66,7 @@ class NewsItem extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 news.date,
-                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                style: const TextStyle(color: AppColors.customDarkGrey, fontSize: 12),
               ),
               const SizedBox(height: 8),
               Text(news.description),

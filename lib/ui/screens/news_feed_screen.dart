@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as parser;
 import 'package:html/dom.dart' as dom;
+import 'package:jrrplayerapp/constants/app_colors.dart';
 
 import 'package:jrrplayerapp/models/news.dart';
 import 'package:jrrplayerapp/widgets/news_item.dart';
@@ -328,20 +329,20 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
               Icon(
                 _hasInternetError ? Icons.wifi_off : Icons.error_outline,
                 size: 64,
-                color: Colors.grey[400],
+                color: AppColors.customGrey,
               ),
               const SizedBox(height: 16),
               Text(
                 _error,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+                style: const TextStyle(color: AppColors.customWhite, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: _loadNews,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[400],
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.customLightGreen,
+                  foregroundColor: AppColors.customWhite,
                 ),
                 child: const Text('Попробовать снова'),
               ),
@@ -361,12 +362,12 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
             Icon(
               Icons.article_outlined,
               size: 64,
-              color: Colors.grey,
+              color: AppColors.customGrey,
             ),
             SizedBox(height: 16),
             Text(
               'Статьи не найдены',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              style: TextStyle(color: AppColors.customGrey, fontSize: 16),
             ),
           ],
         ),
@@ -381,7 +382,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         child: Center(
           child: Text(
             'Все статьи загружены',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(color: AppColors.customGrey),
           ),
         ),
       );
@@ -402,14 +403,14 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.customBlack,
       body: RefreshIndicator(
         onRefresh: _loadNews,
-        color: Colors.green[400],
+        color: AppColors.customLightGreen,
         child: _isLoading
             ? const Center(
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.customLightGreen),
                 ),
               )
             : _error.isNotEmpty

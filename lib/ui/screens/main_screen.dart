@@ -68,7 +68,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     _tabController = TabController(length: 3, vsync: this);
     // Настройка системной навигационной панели																					
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarColor: AppColors.customTransp,
       systemNavigationBarIconBrightness: Brightness.light,
     ));
   }
@@ -163,7 +163,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.transparent,
+              backgroundColor: AppColors.customTransp,
               elevation: 0,
               foregroundColor: AppColors.customWhite,
               shape: RoundedRectangleBorder(
@@ -248,7 +248,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                         );
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
+                        backgroundColor: AppColors.customTransp,
                         elevation: 0,
                         foregroundColor: AppColors.customWhite,
                         shape: RoundedRectangleBorder(

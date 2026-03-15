@@ -2,6 +2,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -66,7 +67,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
 
     controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
+      ..setBackgroundColor(AppColors.customBackgr)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (progress) {
@@ -96,11 +97,11 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     // ==================== ВЕБ-ВЕРСИЯ ====================
     if (kIsWeb) {
       return Scaffold(
-        backgroundColor: Colors.black87,
+        backgroundColor: AppColors.customBackgr,
         appBar: AppBar(
           title: Text(widget.title),
-          backgroundColor: Colors.green[800],
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.customGreen,
+          foregroundColor: AppColors.customWhite,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context),
@@ -110,14 +111,14 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.open_in_browser, size: 80, color: Colors.white70),
+              Icon(Icons.open_in_browser, size: 80, color: AppColors.customWhite),
               SizedBox(height: 24),
               Text(
                 'Открываем статью в новой вкладке...',
-                style: TextStyle(fontSize: 20, color: Colors.white),
+                style: TextStyle(fontSize: 20, color: AppColors.customWhite),
               ),
               SizedBox(height: 16),
-              CircularProgressIndicator(color: Colors.green),
+              CircularProgressIndicator(color: AppColors.customGreen),
             ],
           ),
         ),
@@ -128,8 +129,8 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
-        backgroundColor: Colors.green[800],
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.customLightGreen,
+        foregroundColor: AppColors.customWhite,
         actions: [
           if (_isLoading)
             Padding(
@@ -140,7 +141,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
                   value: _loadingProgress,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.customWhite),
                 ),
               ),
             ),
@@ -152,7 +153,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
           if (_isLoading && _loadingProgress < 1.0)
             LinearProgressIndicator(
               value: _loadingProgress,
-              backgroundColor: Colors.grey[800],
+              backgroundColor: AppColors.customBackgr,
               valueColor: AlwaysStoppedAnimation<Color>(Colors.green[400]!),
             ),
         ],

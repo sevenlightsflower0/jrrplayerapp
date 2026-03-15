@@ -49,7 +49,7 @@ class RadioButtonWithWaves extends StatelessWidget {
                   boxShadow: [
                     if (isPlaying && !isBuffering && hasConnection)
                       const BoxShadow(
-                        color: Colors.transparent, // полностью прозрачная подсветка
+                        color: AppColors.customTransp, // полностью прозрачная подсветка
                         blurRadius: 10,
                         spreadRadius: 2,
                       ),
@@ -58,7 +58,7 @@ class RadioButtonWithWaves extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: () => audioService.switchToRadio(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
+                    backgroundColor:AppColors.customTransp,
                     foregroundColor: AppColors.customBackgr,
                     shape: const CircleBorder(),
                     padding: EdgeInsets.zero,
@@ -126,10 +126,10 @@ class RadioButtonWithWaves extends StatelessWidget {
 
   Color _getWaveColor(bool hasConnection) {
     if (!hasConnection) {
-      return Colors.red; // Красный при отсутствии соединения
+      return AppColors.customRed; // Красный при отсутствии соединения
     }
     
-    return Colors.green; // Зеленый при нормальной работе
+    return AppColors.customGreen; // Зеленый при нормальной работе
   }
 }
 
@@ -313,7 +313,7 @@ class _CrossLinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.red
+      ..color = AppColors.customRed
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0
       ..strokeCap = StrokeCap.round;

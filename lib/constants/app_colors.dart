@@ -8,7 +8,7 @@ class AppColors {
 
   // Системные цвета
   static const Color statusBarColor = Color(0xFF202020);
-  static const Color navBarColor = Colors.transparent;
+  static const Color navBarColor = Color(0x00000000);
 
   // Акцентные цвета
   static const Color primary = Color(0xFF53B9C5);
@@ -36,5 +36,9 @@ class AppColors {
   static const Color customWhiteTransp = Color(0xFF383838);
   static const Color customRed = Color(0xFFFF0000);
   static const Color customGreen = Color(0xFF007F02);
+  static const Color customLightGreen = Color(0xFF66BB6A);
   static const Color customTransp = Color(0x00000000);
+  static const Color customPurple = Color(0xFF9C27B0);
+  static const Color customGrey = Color(0xFF757575);
+  static const Color customDarkGrey = Color(0xFF424242);
 }

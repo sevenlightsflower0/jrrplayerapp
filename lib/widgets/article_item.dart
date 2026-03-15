@@ -1,6 +1,7 @@
 // article_item.dart
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/models/article.dart';
 import 'package:jrrplayerapp/ui/screens/articles_detail_screen.dart';
 
@@ -15,7 +16,7 @@ class ArticleItem extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       elevation: 2,
-      color: Colors.grey[900],
+      color: AppColors.customDarkGrey,
       child: InkWell(
         onTap: () => _openArticleDetail(context),
         child: Column(
@@ -34,7 +35,7 @@ class ArticleItem extends StatelessWidget {
                     imageUrl: article.imageUrl,
                     fit: BoxFit.contain, // Изменил на contain вместо cover
                     placeholder: (context, url) => Container(
-                      color: Colors.grey[800],
+                      color: AppColors.customGrey,
                       child: const Center(
                         child: CircularProgressIndicator(
                           valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
@@ -42,17 +43,17 @@ class ArticleItem extends StatelessWidget {
                       ),
                     ),
                     errorWidget: (context, url, error) => Container(
-                      color: Colors.grey[800],
+                      color: AppColors.customDarkGrey,
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.article, color: Colors.white, size: 40),
+                          Icon(Icons.article, color: AppColors.customWhite, size: 40),
                           SizedBox(height: 8),
                           Text(
                             'Изображение\nне загружено',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white70,
+                              color: AppColors.customGrey,
                               fontSize: 12,
                             ),
                           ),
@@ -69,8 +70,8 @@ class ArticleItem extends StatelessWidget {
                 children: [
                   Text(
                     article.date,
-                    style: TextStyle(
-                      color: Colors.green[400],
+                    style: const TextStyle(
+                      color: AppColors.customGreen,
                       fontSize: 12,
                     ),
                   ),
@@ -78,7 +79,7 @@ class ArticleItem extends StatelessWidget {
                   Text(
                     article.title,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppColors.customWhite,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
@@ -92,7 +93,7 @@ class ArticleItem extends StatelessWidget {
                     Text(
                       article.description,
                       style: const TextStyle(
-                        color: Colors.white70,
+                        color: AppColors.customWhite,
                         fontSize: 14,
                       ),
                       maxLines: 2,
@@ -100,13 +101,13 @@ class ArticleItem extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  Row(
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Text(
                         'Читать далее',
                         style: TextStyle(
-                          color: Colors.green[400],
+                          color: AppColors.customLightGreen,
                           fontSize: 12,
                         ),
                       ),

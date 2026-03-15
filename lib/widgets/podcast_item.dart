@@ -127,12 +127,12 @@ class _PodcastItemState extends State<PodcastItem> {
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: Colors.grey[800],
+        color: AppColors.customGrey,
         borderRadius: BorderRadius.circular(4),
       ),
       child: const Icon(
         Icons.audiotrack,
-        color: Colors.white,
+        color: AppColors.customWhite,
         size: 20,
       ),
     );
@@ -174,9 +174,9 @@ class _PodcastItemState extends State<PodcastItem> {
       SnackBar(
         content: Text(
           message,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: AppColors.customWhite),
         ),
-        backgroundColor: Colors.red.shade700,
+        backgroundColor: AppColors.customRed,
         duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
@@ -321,7 +321,7 @@ class _PodcastItemState extends State<PodcastItem> {
                   child: Text(
                     widget.podcast.title,
                     style: const TextStyle(
-                      color: Colors.white, 
+                      color: AppColors.white, 
                       fontSize: 12,
                       height: 1.2
                     ),
@@ -366,7 +366,7 @@ class _PodcastItemState extends State<PodcastItem> {
                 Text(
                   _formatDuration(_currentPosition),
                   style: const TextStyle(
-                    color: Colors.white, 
+                    color: AppColors.white, 
                     fontSize: 10,
                     fontWeight: FontWeight.bold
                   ),
@@ -380,9 +380,9 @@ class _PodcastItemState extends State<PodcastItem> {
                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                       activeTrackColor: AppColors.customWhite,
                       inactiveTrackColor: AppColors.customWhiteTransp,
-                      thumbColor: Colors.white,
+                      thumbColor: AppColors.white,
                       activeTickMarkColor: AppColors.customBackgr, 
-                      inactiveTickMarkColor: Colors.transparent,
+                      inactiveTickMarkColor: AppColors.customTransp,
                     ),
                     child: Slider(
                       value: _sliderValue,
@@ -412,7 +412,7 @@ class _PodcastItemState extends State<PodcastItem> {
                 Text(
                   _formatDuration(actualDuration),
                   style: const TextStyle(
-                    color: Colors.white, 
+                    color: AppColors.customWhite, 
                     fontSize: 10,
                     fontWeight: FontWeight.bold
                   ),
@@ -452,7 +452,7 @@ class CustomVerticalThumbShape extends SliderComponentShape {
   }) {
     final canvas = context.canvas;
     final fillPaint = Paint()
-      ..color = sliderTheme.thumbColor ?? Colors.white
+      ..color = sliderTheme.thumbColor ?? AppColors.white
       ..style = PaintingStyle.fill;
 
     final borderPaint = Paint()

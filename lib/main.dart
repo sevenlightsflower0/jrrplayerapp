@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'services/audio_player_service.dart';
 import 'repositories/podcast_repository.dart';
@@ -15,7 +16,7 @@ Future<void> main() async {
     androidNotificationOngoing: true,
     androidShowNotificationBadge: true,
     androidNotificationIcon: 'mipmap/ic_launcher', // можно заменить на свой
-    notificationColor: const Color(0xFF2196F3),
+    notificationColor: AppColors.customStyle,
     artDownscaleWidth: 512,
     artDownscaleHeight: 512,
   );
@@ -43,7 +44,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'J-Rock Radio Player',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.customStyle),
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       home: const MainScreen(),

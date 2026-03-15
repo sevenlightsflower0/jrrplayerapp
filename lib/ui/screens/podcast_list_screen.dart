@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/repositories/podcast_repository.dart';
 import 'package:jrrplayerapp/services/audio_player_service.dart';
 import 'package:provider/provider.dart';
@@ -880,7 +881,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     });
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.customBlack,
       body: _buildBody(),
     );
   }
@@ -913,14 +914,14 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
             children: [
               Text(
                 _downloadStatus,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+                style: const TextStyle(color: AppColors.customWhite, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               if (_connectionType == ConnectionType.mobile)
                 const Text(
                   'Используется оптимизированный режим для медленного соединения',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(color: AppColors.customGrey, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
             ],
@@ -942,12 +943,12 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
                 ? Icons.wifi_off 
                 : Icons.error_outline,
               size: 64,
-              color: Colors.white54,
+              color: AppColors.customWhite,
             ),
             const SizedBox(height: 16),
             Text(
               errorMessage,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+              style: const TextStyle(color: AppColors.customWhite, fontSize: 16),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -957,8 +958,8 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
                 ElevatedButton(
                   onPressed: _loadPodcasts,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.customVolume,
+                    foregroundColor: AppColors.customWhite,
                   ),
                   child: const Text('Повторить'),
                 ),
@@ -985,25 +986,25 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.podcasts, size: 64, color: Colors.white54),
+          const Icon(Icons.podcasts, size: 64, color: AppColors.customGrey),
           const SizedBox(height: 16),
           const Text(
             'Нет доступных подкастов',
-            style: TextStyle(color: Colors.white, fontSize: 18),
+            style: TextStyle(color: AppColors.customWhite, fontSize: 18),
           ),
           const SizedBox(height: 8),
           Text(
             _connectionType == ConnectionType.offline
                 ? 'Подключитесь к интернету для загрузки'
                 : 'Проверьте соединение и попробуйте снова',
-            style: const TextStyle(color: Colors.white54),
+            style: const TextStyle(color: AppColors.customGrey),
           ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _loadPodcasts,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
+              backgroundColor: AppColors.customVolume,
+              foregroundColor: AppColors.customWhite,
             ),
             child: const Text('Загрузить подкасты'),
           ),
@@ -1046,15 +1047,15 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
                     _connectionType == ConnectionType.mobile
                         ? 'Загрузка... (может занять время)'
                         : 'Загрузка...',
-                    style: const TextStyle(color: Colors.white54),
+                    style: const TextStyle(color: AppColors.customGrey),
                   ),
                 ],
               )
             : ElevatedButton(
                 onPressed: _loadMorePodcasts,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.customVolume,
+                  foregroundColor: AppColors.customWhite,
                 ),
                 child: const Text('Загрузить еще'),
               ),

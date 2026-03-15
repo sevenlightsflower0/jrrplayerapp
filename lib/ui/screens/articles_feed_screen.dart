@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as parser;
 import 'package:html/dom.dart' as dom;
+import 'package:jrrplayerapp/constants/app_colors.dart';
 
 import 'package:jrrplayerapp/models/article.dart';
 import 'package:jrrplayerapp/widgets/article_item.dart';
@@ -217,18 +218,18 @@ class _ArticlesFeedScreenState extends State<ArticlesFeedScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.wifi_off, size: 80, color: Colors.grey),
+          const Icon(Icons.wifi_off, size: 80, color: AppColors.customGrey),
           const SizedBox(height: 20),
           Text(
             _error.isEmpty ? 'Нет интернета' : _error,
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
+            style: const TextStyle(color: AppColors.customWhiteTransp, fontSize: 16),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _loadArticles,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green[600]),
-            child: const Text('Обновить', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.customLightGreen),
+            child: const Text('Обновить', style: TextStyle(color: AppColors.customWhite)),
           ),
         ],
       ),
@@ -236,20 +237,20 @@ class _ArticlesFeedScreenState extends State<ArticlesFeedScreen> {
   }
 
   Widget _buildLoader() {
-    return const Center(child: CircularProgressIndicator(color: Colors.green));
+    return const Center(child: CircularProgressIndicator(color: AppColors.customLightGreen));
   }
 
   Widget _buildLoadMore() {
     if (!_hasMorePages) {
       return const Padding(
         padding: EdgeInsets.all(20),
-        child: Center(child: Text('Больше нет', style: TextStyle(color: Colors.grey))),
+        child: Center(child: Text('Больше нет', style: TextStyle(color: AppColors.customWhiteTransp))),
       );
     }
     return _isLoadingMore
         ? const Padding(
             padding: EdgeInsets.all(20),
-            child: Center(child: CircularProgressIndicator(color: Colors.green)),
+            child: Center(child: CircularProgressIndicator(color: AppColors.customGreen)),
           )
         : const SizedBox.shrink();
   }
@@ -257,16 +258,16 @@ class _ArticlesFeedScreenState extends State<ArticlesFeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.customBlack,
       body: RefreshIndicator(
         onRefresh: _loadArticles,
-        color: Colors.green[400],
+        color: AppColors.customGreen,
         child: _isLoading
             ? _buildLoader()
             : _error.isNotEmpty
                 ? _buildError()
                 : _articles.isEmpty
-                    ? const Center(child: Text('Пусто', style: TextStyle(color: Colors.grey)))
+                    ? const Center(child: Text('Пусто', style: TextStyle(color: AppColors.customGrey)))
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(vertical: 8),

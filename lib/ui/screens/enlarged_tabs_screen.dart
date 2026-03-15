@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/constants/strings.dart';
 import 'package:jrrplayerapp/ui/screens/articles_feed_screen.dart';
 import 'package:jrrplayerapp/ui/screens/news_feed_screen.dart';
@@ -26,8 +27,8 @@ class _EnlargedTabsScreenState extends State<EnlargedTabsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text(AppStrings.appName),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: AppColors.customWhite,
+        foregroundColor: AppColors.customBlack,
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
