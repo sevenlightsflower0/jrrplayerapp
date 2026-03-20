@@ -134,6 +134,9 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               padding: EdgeInsets.zero,                    // ← убирает левый отступ всего бара
               tabAlignment: TabAlignment.fill,             // ← заставляет табы равномерно заполнять ширину
               labelPadding: const EdgeInsets.symmetric(horizontal: 2.0), // можно чуть увеличить для красоты  
+              labelColor: AppColors.customWhite,
+              unselectedLabelColor: AppColors.customGreen,
+              indicatorColor: AppColors.customWhite,
               tabs: const [
                 Tab(text: AppStrings.articlesTab),
                 Tab(text: AppStrings.newsTab),
