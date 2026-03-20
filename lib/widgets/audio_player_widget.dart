@@ -439,7 +439,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                           onChangeEnd: (value) {
                             _setVolume(value);
                           },
-                          activeColor: AppColors.customGreen,
+                          activeColor: AppColors.customVolume,
                           inactiveColor: AppColors.customWhiteTransp,
                         );
                       },
