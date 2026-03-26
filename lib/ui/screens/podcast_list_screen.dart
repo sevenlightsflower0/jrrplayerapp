@@ -958,7 +958,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
                 ElevatedButton(
                   onPressed: _loadPodcasts,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.customVolume,
+                    backgroundColor: AppColors.customGreen,
                     foregroundColor: AppColors.customWhite,
                   ),
                   child: const Text('Повторить'),
@@ -1003,7 +1003,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
           ElevatedButton(
             onPressed: _loadPodcasts,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.customVolume,
+              backgroundColor: AppColors.customGreen,
               foregroundColor: AppColors.customWhite,
             ),
             child: const Text('Загрузить подкасты'),
@@ -1054,7 +1054,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
             : ElevatedButton(
                 onPressed: _loadMorePodcasts,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.customVolume,
+                  backgroundColor: AppColors.customGreen,
                   foregroundColor: AppColors.customWhite,
                 ),
                 child: const Text('Загрузить еще'),

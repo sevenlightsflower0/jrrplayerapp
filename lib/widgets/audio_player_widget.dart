@@ -397,7 +397,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     );
                   },
                 ),
-                SizedBox(width: mediumSpacing),
+                SizedBox(width: smallSpacing),
 
                 IconButton(
                   icon: const Icon(Icons.skip_next, size: 30),
@@ -432,7 +432,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                           value: volume,
                           min: 0.0,
                           max: 1.0,
-                          divisions: 10,
+                          divisions: null, // без делений
                           onChanged: (value) {
                             _volumeNotifier.value = value;
                           },
@@ -457,7 +457,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 ],
               ),
             ),
-            SizedBox(height: smallSpacing),
+            SizedBox(height: mediumSpacing),
 
             // Название трека
             ValueListenableBuilder<AudioMetadata?>(

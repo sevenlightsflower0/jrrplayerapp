@@ -29,6 +29,7 @@ class NewsItem extends StatelessWidget {
                   height: 200,
                   width: double.infinity,
                   fit: BoxFit.contain,
+                  alignment: Alignment.center,
                 ),
               ],
               const SizedBox(height: 8),

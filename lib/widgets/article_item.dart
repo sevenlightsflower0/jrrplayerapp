@@ -34,6 +34,7 @@ class ArticleItem extends StatelessWidget {
                   child: CachedNetworkImage(
                     imageUrl: article.imageUrl,
                     fit: BoxFit.contain, // Изменил на contain вместо cover
+                    alignment: Alignment.center,
                     placeholder: (context, url) => Container(
                       color: AppColors.customGrey,
                       child: const Center(

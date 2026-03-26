@@ -102,6 +102,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                 Tab(text: AppStrings.podcastsTab),
               ],
             ),
+            const SizedBox(height: 2),   // adds spacing
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -115,8 +116,9 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           ],
         ),
         Positioned(
-          bottom: 16,
-          right: 16,
+          bottom: 12,
+          left: 0,
+          right: 0,          
           child: ElevatedButton(
             onPressed: () {
               Navigator.push(
@@ -225,8 +227,9 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                         ],
                       ),
                       Positioned(
-                        bottom: 16,
-                        right: 16,
+                        bottom: 12,
+                        left: 0,
+                        right: 0,
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.push(
@@ -261,18 +264,20 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Левая часть – кнопка радио и плеер прижаты к верху
+                            // Левая часть – теперь на всю высоту, содержимое прижато к верху
                             SizedBox(
                               width: leftWidth,
+                              height: availableHeight, // ← добавляем высоту
                               child: Column(
-                                mainAxisSize: MainAxisSize.min,
+                                mainAxisSize: MainAxisSize.max, // можно не указывать, по умолчанию max
+                                mainAxisAlignment: MainAxisAlignment.center, 
                                 children: [
                                   RadioButtonWithWaves(screenWidth: leftWidth),
                                   const AudioPlayerWidget(),
                                 ],
                               ),
                             ),
-                            // Правая часть – социальные кнопки сверху, табы под ними
+                            // Правая часть
                             Expanded(
                               child: SizedBox(
                                 height: availableHeight,

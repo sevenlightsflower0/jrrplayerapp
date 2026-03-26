@@ -294,7 +294,8 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         title: _cleanText(title),
         date: _cleanText(dateTime),
         imageUrl: imageUrl ?? '',
-        description: '$description\n$source',
+        // Теперь ровно один 📡 перед источником
+        description: '$description\n📡 $source',
         url: url,
       );
     } catch (e) {
