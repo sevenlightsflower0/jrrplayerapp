@@ -20,7 +20,7 @@ class NewsItem extends StatelessWidget {
             children: [
               Text(
                 news.date,
-                style: const TextStyle(color: AppColors.customLightGreen, fontSize: 12),
+                style: const TextStyle(color: AppColors.customGreen, fontSize: 12),
               ),
               if (news.imageUrl.isNotEmpty) ...[
                 const SizedBox(height: 8),

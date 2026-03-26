@@ -23,7 +23,7 @@ class RadioButtonWithWaves extends StatelessWidget {
         final double buttonSize = screenWidth * 0.25;
         
         return Container(
-          margin: const EdgeInsets.symmetric(vertical: 16),
+          margin: const EdgeInsets.symmetric(vertical: 4),
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -36,7 +36,7 @@ class RadioButtonWithWaves extends StatelessWidget {
               // Перечеркивающая линия при отсутствии интернета
               if (!hasConnection && !isBuffering)
                 _CrossLine(
-                  size: buttonSize * 0.8,
+                  size: buttonSize * 0.75,
                   verticalOffset: -buttonSize * 0.15,
                 ),
               
@@ -70,8 +70,8 @@ class RadioButtonWithWaves extends StatelessWidget {
                       // Основная иконка
                       Image.asset(
                         'assets/images/icon_jrockradio_custom_style.png',
-                        width: buttonSize * 0.9,
-                        height: buttonSize * 0.9,
+                        width: buttonSize * 1.0,
+                        height: buttonSize * 1.0,
                         fit: BoxFit.contain,
                       ),
                       

@@ -273,8 +273,16 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         final lastItalic = clonedElement.querySelector('i:last-child');
         if (lastItalic != null) {
           source = _cleanText(lastItalic.text.trim());
+<<<<<<< HEAD
           // Удаляем возможный 📡 из source, чтобы потом добавить свой
           source = source.replaceAll('📡', '').trim();
+=======
+          // Если в source уже есть 📡, оставляем как есть
+          // Если нет - добавляем в начало
+          if (!source.startsWith('📡')) {
+            source = '📡 $source';
+          }
+>>>>>>> f557e9bd76fc60b02e79ff8ef1732c179fba5b58
           lastItalic.remove();
         }
 
@@ -294,8 +302,12 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         title: _cleanText(title),
         date: _cleanText(dateTime),
         imageUrl: imageUrl ?? '',
+<<<<<<< HEAD
         // Теперь ровно один 📡 перед источником
         description: '$description\n📡 $source',
+=======
+        description: '$description\n$source',
+>>>>>>> f557e9bd76fc60b02e79ff8ef1732c179fba5b58
         url: url,
       );
     } catch (e) {
@@ -345,7 +357,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
               ElevatedButton(
                 onPressed: _loadNews,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.customLightGreen,
+                  backgroundColor: AppColors.customGreen,
                   foregroundColor: AppColors.customWhite,
                 ),
                 child: const Text('Попробовать снова'),
@@ -410,11 +422,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
       backgroundColor: AppColors.customBlack,
       body: RefreshIndicator(
         onRefresh: _loadNews,
-        color: AppColors.customLightGreen,
+        color: AppColors.customGreen,
         child: _isLoading
             ? const Center(
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.customLightGreen),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.customGreen),
                 ),
               )
             : _error.isNotEmpty

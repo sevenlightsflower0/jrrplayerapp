@@ -228,7 +228,7 @@ class _ArticlesFeedScreenState extends State<ArticlesFeedScreen> {
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _loadArticles,
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.customLightGreen),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.customGreen),
             child: const Text('Обновить', style: TextStyle(color: AppColors.customWhite)),
           ),
         ],
@@ -237,7 +237,7 @@ class _ArticlesFeedScreenState extends State<ArticlesFeedScreen> {
   }
 
   Widget _buildLoader() {
-    return const Center(child: CircularProgressIndicator(color: AppColors.customLightGreen));
+    return const Center(child: CircularProgressIndicator(color: AppColors.customGreen));
   }
 
   Widget _buildLoadMore() {
