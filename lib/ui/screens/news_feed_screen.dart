@@ -264,17 +264,17 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
       String source = 'JRR News';
 
       if (textElement != null) {
-																														
         final clonedElement = textElement.clone(true);
         
         // Удаляем заголовок (жирный текст)
         clonedElement.querySelector('b')?.remove();
         
-        // Удаляем последний <i> — это и есть источник (главное исправление!)
+        // Удаляем последний <i> — это и есть источник
         final lastItalic = clonedElement.querySelector('i:last-child');
         if (lastItalic != null) {
           source = _cleanText(lastItalic.text.trim());
-          source = source.replaceFirst(RegExp(r'^📡\s*'), '').trim();
+          // Удаляем возможный 📡 из source, чтобы потом добавить свой
+          source = source.replaceAll('📡', '').trim();
           lastItalic.remove();
         }
 
@@ -286,11 +286,15 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         description = title;
       }
 
+      // Удаляем все возможные 📡 из описания, чтобы не было дублирования
+      description = description.replaceAll('📡', '').trim();
+
       return News(
         id: messageId.isNotEmpty ? messageId : url,
         title: _cleanText(title),
         date: _cleanText(dateTime),
         imageUrl: imageUrl ?? '',
+        // Теперь ровно один 📡 перед источником
         description: '$description\n📡 $source',
         url: url,
       );

@@ -358,7 +358,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     final bool isCompact = maxPlayerHeight < 400;
     final double coverSize = isCompact ? 48.0 : 64.0;
     final double iconSize = isCompact ? 40.0 : 50.0;
-    final double smallSpacing = isCompact ? 4.0 : 8.0;
+    final double smallSpacing = isCompact ? 2.0 : 6.0;
     final double mediumSpacing = isCompact ? 8.0 : 12.0;
     final double largeSpacing = isCompact ? 12.0 : 16.0;
 
@@ -379,7 +379,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                       : null,
                   color: _audioService.isPodcastMode ? AppColors.customWhite : AppColors.customGrey,
                 ),
-                SizedBox(width: mediumSpacing),
+                SizedBox(width: smallSpacing),
 
                 ValueListenableBuilder<bool>(
                   valueListenable: _playingNotifier,
@@ -408,7 +408,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 ),
               ],
             ),
-            SizedBox(height: largeSpacing),
+            SizedBox(height: smallSpacing),
 
             // Регулятор громкости
             Padding(
@@ -457,7 +457,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 ],
               ),
             ),
-            SizedBox(height: largeSpacing),
+            SizedBox(height: smallSpacing),
 
             // Название трека
             ValueListenableBuilder<AudioMetadata?>(
@@ -482,7 +482,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 );
               },
             ),
-            SizedBox(height: mediumSpacing),
+            SizedBox(height: smallSpacing),
 
             // Обложка
             ValueListenableBuilder<int>(
@@ -513,7 +513,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 );
               },
             ),
-            SizedBox(height: mediumSpacing),
+            SizedBox(height: smallSpacing),
 
             // Исполнитель
             ValueListenableBuilder<AudioMetadata?>(
@@ -532,7 +532,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               },
             ),
 
-            SizedBox(height: largeSpacing),
+            SizedBox(height: smallSpacing),
           ],
         ),
       ),
