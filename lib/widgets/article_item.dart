@@ -107,7 +107,7 @@ class ArticleItem extends StatelessWidget {
                       Text(
                         'Читать далее',
                         style: TextStyle(
-                          color: AppColors.customLightGreen,
+                          color: AppColors.customGreen,
                           fontSize: 12,
                         ),
                       ),

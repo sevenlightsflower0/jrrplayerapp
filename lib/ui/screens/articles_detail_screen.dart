@@ -129,7 +129,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
-        backgroundColor: AppColors.customLightGreen,
+        backgroundColor: AppColors.customGreen,
         foregroundColor: AppColors.customWhite,
         actions: [
           if (_isLoading)
