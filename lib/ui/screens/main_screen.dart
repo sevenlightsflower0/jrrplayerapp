@@ -102,7 +102,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                 Tab(text: AppStrings.podcastsTab),
               ],
             ),
-            const SizedBox(height: 2),   // adds spacing
+            const SizedBox(height: 8),   // adds spacing
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -269,11 +269,12 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                               width: leftWidth,
                               height: availableHeight, // ← добавляем высоту
                               child: Column(
-                                mainAxisSize: MainAxisSize.max, // можно не указывать, по умолчанию max
-                                mainAxisAlignment: MainAxisAlignment.center, 
+                                mainAxisSize: MainAxisSize.max, // можно не указывать, по умолчанию max 
                                 children: [
                                   RadioButtonWithWaves(screenWidth: leftWidth),
-                                  const AudioPlayerWidget(),
+                                  const Expanded(               // player takes remaining height
+                                    child: AudioPlayerWidget(),
+                                  ),
                                 ],
                               ),
                             ),

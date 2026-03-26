@@ -23,47 +23,51 @@ class ArticleItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (article.imageUrl.isNotEmpty)
-              ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(8),
-                  topRight: Radius.circular(8),
-                ),
-                child: SizedBox(
-                  height: 200, // Увеличил высоту для лучшего отображения
-                  width: double.infinity,
-                  child: CachedNetworkImage(
-                    imageUrl: article.imageUrl,
-                    fit: BoxFit.contain, // Изменил на contain вместо cover
-                    alignment: Alignment.center,
-                    placeholder: (context, url) => Container(
-                      color: AppColors.customGrey,
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+              Padding(
+                padding: const EdgeInsets.all(8.0), // adds space around the image
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    topRight: Radius.circular(8),
+                  ),
+                  child: SizedBox(
+                    height: 200, // Увеличил высоту для лучшего отображения
+                    width: double.infinity,
+                    child: CachedNetworkImage(
+                      imageUrl: article.imageUrl,
+                      fit: BoxFit.contain, // Изменил на contain вместо cover
+                      alignment: Alignment.center,
+                      placeholder: (context, url) => Container(
+                        color: AppColors.customGrey,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                          ),
                         ),
                       ),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      color: AppColors.customDarkGrey,
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.article, color: AppColors.customWhite, size: 40),
-                          SizedBox(height: 8),
-                          Text(
-                            'Изображение\nне загружено',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: AppColors.customGrey,
-                              fontSize: 12,
+                      errorWidget: (context, url, error) => Container(
+                        color: AppColors.customDarkGrey,
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.article, color: AppColors.customWhite, size: 40),
+                            SizedBox(height: 8),
+                            Text(
+                              'Изображение\nне загружено',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppColors.customGrey,
+                                fontSize: 12,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
+              
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
