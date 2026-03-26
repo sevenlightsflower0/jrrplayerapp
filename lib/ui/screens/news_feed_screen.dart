@@ -274,7 +274,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         final lastItalic = clonedElement.querySelector('i:last-child');
         if (lastItalic != null) {
           source = _cleanText(lastItalic.text.trim());
-          source = source.replaceFirst(RegExp(r'^📡\s*'), '').trim();
+          // Если в source уже есть 📡, оставляем как есть
+          // Если нет - добавляем в начало
+          if (!source.startsWith('📡')) {
+            source = '📡 $source';
+          }
           lastItalic.remove();
         }
 
@@ -291,7 +295,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         title: _cleanText(title),
         date: _cleanText(dateTime),
         imageUrl: imageUrl ?? '',
-        description: '$description\n📡 $source',
+        description: '$description\n$source',
         url: url,
       );
     } catch (e) {
