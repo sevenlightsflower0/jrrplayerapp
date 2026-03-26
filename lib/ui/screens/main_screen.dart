@@ -259,31 +259,32 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                         final double buttonSize = rightWidth * 0.10;
 
                         return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // Левая часть – кнопка радио и плеер прижаты к верху
                             SizedBox(
                               width: leftWidth,
-                              height: availableHeight,
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                child: _buildTopPart(
-                                  availableWidth: leftWidth,
-                                  availableHeight: availableHeight,
-                                ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  RadioButtonWithWaves(screenWidth: leftWidth),
+                                  const AudioPlayerWidget(),
+                                ],
                               ),
                             ),
                             // Правая часть – социальные кнопки сверху, табы под ними
-                            SizedBox(
-                              width: rightWidth,
-                              height: availableHeight,
-                              child: Column(
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8), // минимальный отступ сверху
-                                    child: _buildSocialButtons(buttonSize),
-                                  ),
-                                  Expanded(child: _buildBottomPart()),
-                                ],
+                            Expanded(
+                              child: SizedBox(
+                                height: availableHeight,
+                                child: Column(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: _buildSocialButtons(buttonSize),
+                                    ),
+                                    Expanded(child: _buildBottomPart()),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
