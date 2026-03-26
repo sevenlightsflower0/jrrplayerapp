@@ -23,7 +23,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   late TabController _tabController;
   bool _isInitialized = false;
 
-  // Функция для открытия URL
   Future<void> _launchURL(String url) async {
     final Uri uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
@@ -33,9 +32,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     }
   }
 
-  // Функция для построения социальных кнопок
   Widget _buildSocialButton(String asset, String url, double buttonSize) {
-    // Ограничиваем размер, чтобы на узких экранах кнопки не становились невидимыми
     final double clampedSize = buttonSize.clamp(30.0, 60.0);
     return SizedBox(
       width: clampedSize,
@@ -45,9 +42,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.customBackgr,
           foregroundColor: AppColors.customWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(2),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
           padding: EdgeInsets.zero,
         ),
         child: SvgPicture.asset(
@@ -60,7 +55,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     );
   }
 
-  // Социальные кнопки (отдельный виджет)
   Widget _buildSocialButtons(double buttonSize) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -72,24 +66,23 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     );
   }
 
-  // Верхняя часть (радио + плеер) - 55% высоты
+  // Верхняя часть (радио + плеер) – теперь прижата к верху
   Widget _buildTopPart({required double availableWidth, required double availableHeight}) {
     return SizedBox(
-      height: availableHeight * 0.55, // 55% от высоты
+      height: availableHeight * 0.55,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.start, // прижимаем к верху
         children: [
-          // Круглая кнопка переключения на радио с анимацией волн
-          RadioButtonWithWaves(screenWidth: availableWidth),
-          // Проигрыватель
+          Padding(
+            padding: const EdgeInsets.only(top: 8), // небольшой отступ сверху
+            child: RadioButtonWithWaves(screenWidth: availableWidth),
+          ),
           const AudioPlayerWidget(),
-          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  // Нижняя половина экрана (табы + TabBarView + кнопка "Увеличить табы" поверх)
   Widget _buildBottomPart() {
     return Stack(
       children: [
@@ -135,9 +128,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               backgroundColor: AppColors.customTransp,
               elevation: 0,
               foregroundColor: AppColors.customWhite,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
             child: const Text(AppStrings.enlargeTabsButton),
           ),
@@ -151,7 +142,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     super.initState();
     _initializeAsync();
     _tabController = TabController(length: 3, vsync: this);
-    // Настройка системной навигационной панели
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       systemNavigationBarColor: AppColors.customTransp,
       systemNavigationBarIconBrightness: Brightness.light,
@@ -159,9 +149,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _initializeAsync() async {
-    // Даем время на отрисовку начального UI
     await Future.delayed(const Duration(milliseconds: 300));
-    
     if (mounted) {
       setState(() {
         _isInitialized = true;
@@ -176,9 +164,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     if (!_isInitialized) {
       return const Scaffold(
         backgroundColor: AppColors.customBackgr,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.customWhite),
-        ),
+        body: Center(child: CircularProgressIndicator(color: AppColors.customWhite)),
       );
     }
 
@@ -209,22 +195,19 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         top: true,
         bottom: false,
         child: showAppBar
-            // Для десктопа: верхняя часть + TabBarView + кнопка "Увеличить табы" поверх 
             ? LayoutBuilder(
                 builder: (context, constraints) {
                   final double availableWidth = constraints.maxWidth;
                   final double buttonSize = availableWidth * 0.08;
-                  
                   return Stack(
                     children: [
                       Column(
                         children: [
-                          // Социальные кнопки отдельно сверху
+                          // Социальные кнопки с минимальным отступом
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                             child: _buildSocialButtons(buttonSize),
                           ),
-                          // Верхняя часть с радио и плеером
                           _buildTopPart(
                             availableWidth: availableWidth,
                             availableHeight: constraints.maxHeight,
@@ -255,9 +238,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                             backgroundColor: AppColors.customTransp,
                             elevation: 0,
                             foregroundColor: AppColors.customWhite,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                           ),
                           child: const Text(AppStrings.enlargeTabsButton),
                         ),
@@ -269,47 +250,39 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             : OrientationBuilder(
                 builder: (context, orientation) {
                   if (orientation == Orientation.landscape) {
-                    // Горизонтальная ориентация: левая часть 40%, правая 60% ширины, обе на всю высоту
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         final double availableWidth = constraints.maxWidth;
                         final double availableHeight = constraints.maxHeight;
-                        final double leftWidth = availableWidth * 0.4;   // 40% ширины
-                        final double rightWidth = availableWidth * 0.6;  // 60% ширины
+                        final double leftWidth = availableWidth * 0.4;
+                        final double rightWidth = availableWidth * 0.6;
                         final double buttonSize = rightWidth * 0.10;
-                        
+
                         return Row(
                           children: [
-                            // Левая часть (40% ширины) - на всю высоту
+                            // Левая часть – кнопка радио и плеер прижаты к верху
                             SizedBox(
                               width: leftWidth,
                               height: availableHeight,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  // Верхняя часть с радио и плеером (55% высоты)
-                                  _buildTopPart(
-                                    availableWidth: leftWidth,
-                                    availableHeight: availableHeight,
-                                  ),
-                                ],
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: _buildTopPart(
+                                  availableWidth: leftWidth,
+                                  availableHeight: availableHeight,
+                                ),
                               ),
                             ),
-                            // Правая часть (60% ширины) - на всю высоту
+                            // Правая часть – социальные кнопки сверху, табы под ними
                             SizedBox(
                               width: rightWidth,
                               height: availableHeight,
                               child: Column(
                                 children: [
-                                  // Социальные кнопки сверху правой части
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    padding: const EdgeInsets.only(top: 8), // минимальный отступ сверху
                                     child: _buildSocialButtons(buttonSize),
                                   ),
-                                  // TabBar и контент - занимает всё оставшееся пространство
-                                  Expanded(
-                                    child: _buildBottomPart(),
-                                  ),
+                                  Expanded(child: _buildBottomPart()),
                                 ],
                               ),
                             ),
@@ -318,29 +291,23 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                       },
                     );
                   } else {
-                    // Вертикальная ориентация
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         final double availableWidth = constraints.maxWidth;
                         final double availableHeight = constraints.maxHeight;
                         final double buttonSize = availableWidth * 0.10;
-                        
+
                         return Column(
                           children: [
-                            // Социальные кнопки отдельно сверху
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                               child: _buildSocialButtons(buttonSize),
                             ),
-                            // Верхняя часть (радио + плеер) - 55% высоты
                             _buildTopPart(
                               availableWidth: availableWidth,
                               availableHeight: availableHeight,
                             ),
-                            // Нижняя часть (табы) - остальное пространство
-                            Expanded(
-                              child: _buildBottomPart(),
-                            ),
+                            Expanded(child: _buildBottomPart()),
                           ],
                         );
                       },
