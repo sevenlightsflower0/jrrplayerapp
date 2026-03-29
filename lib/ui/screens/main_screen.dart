@@ -262,7 +262,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                         final double buttonSize = rightWidth * 0.10;
 
                         return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             // Левая часть – теперь на всю высоту, содержимое прижато к верху
                             SizedBox(
