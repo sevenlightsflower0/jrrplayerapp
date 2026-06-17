@@ -41,6 +41,7 @@ jobs:
 
       - name: Build iOS (unsigned)
         env:
+          DEVELOPMENT_TEAM: "DUMMYTEAM"
           CODE_SIGNING_ALLOWED: "NO"
           CODE_SIGN_IDENTITY: ""
         run: flutter build ios --release --no-codesign
