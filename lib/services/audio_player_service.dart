@@ -1,4 +1,5 @@
-import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
+1import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
@@ -258,6 +259,14 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
     if (_isInitialized && !_isDisposed) {
       debugPrint('AudioPlayerService already initialized');
       return;
+    }
+
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      debugPrint('🎵 Audio session configured to .playback (no mic)');
+    } catch (e) {
+      debugPrint('⚠️ Could not configure audio session: $e');
     }
 
     if (_isDisposed) {

@@ -58,6 +58,65 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     final WebViewController controller =
         WebViewController.fromPlatformCreationParams(params);
 
+      controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+  
+    // Inject JavaScript to block microphone access on page load
+    controller.addJavaScriptChannel(
+      'disableMic',
+      onMessageReceived: (JavaScriptMessage message) {
+        // Just a placeholder – we use runJavaScript directly below
+      },
+    );
+    
+    // Better: use onWebViewCreated to run the script early
+    // Actually, we can set a custom HTML to run before loading?
+    // The easiest: after controller is created, run the script.
+    // But we need to ensure it runs before the page loads.
+    // We can use onPageStarted to inject it early.
+    // Alternatively, we can set a custom user script.
+    
+    // For simplicity, we'll use runJavaScript after loading, but it might be too late.
+    // Instead, we can use a custom WebKit configuration with a user script.
+    
+    // Since webview_flutter doesn't expose user scripts directly, we can use
+    // the onPageStarted callback to inject the script on every navigation.
+    // ---- RECOMMENDED APPROACH ----
+    controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageStarted: (String url) {
+          // Inject the script as soon as the page starts loading
+          controller.runJavaScript('''
+            (function() {
+              // Override getUserMedia to reject immediately
+              if (navigator.mediaDevices) {
+                navigator.mediaDevices.getUserMedia = function(constraints) {
+                  return Promise.reject(new Error("Microphone not available"));
+                };
+              }
+              // Also block older APIs
+              if (navigator.getUserMedia) {
+                navigator.getUserMedia = null;
+              }
+              if (window.AudioContext) {
+                // Optionally disable AudioContext if it might trigger mic
+                // But that might break audio playback, so be careful.
+                // We'll only block mic-related things.
+              }
+              console.log('Microphone access disabled by app');
+            })();
+          ''');
+          setState(() => _isLoading = true);
+        },
+        onProgress: (progress) {
+          setState(() {
+            _loadingProgress = progress / 100;
+          });
+        },
+        onPageFinished: (_) => setState(() => _isLoading = false),
+        onWebResourceError: (_) => setState(() => _isLoading = false),
+      ),
+    );
+
     // Android-специфичные настройки (безопасно)
     if (controller.platform is AndroidWebViewController) {
       AndroidWebViewController.enableDebugging(true);
