@@ -39,9 +39,16 @@ jobs:
             sleep 10
           done
 
+      - name: Set dummy Development Team in Xcode project
+        run: |
+          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
+          sed -i '' 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = DUMMYTEAM;/g' "$PROJECT_FILE"
+          sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' "$PROJECT_FILE"
+          # Optional: disable automatic signing if you want (but not necessary)
+          # sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' "$PROJECT_FILE"
+          
       - name: Build iOS (unsigned)
         env:
-          DEVELOPMENT_TEAM: "DUMMYTEAM"
           CODE_SIGNING_ALLOWED: "NO"
           CODE_SIGN_IDENTITY: ""
         run: flutter build ios --release --no-codesign
