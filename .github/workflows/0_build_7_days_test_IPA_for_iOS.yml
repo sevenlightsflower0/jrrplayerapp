@@ -18,7 +18,7 @@ jobs:
       - run: flutter clean
       - run: flutter pub get
 
-      # --- NEW: Replace post_install block with correct version ---
+      # --- Fix: Replace post_install block with correct version ---
       - name: Replace post_install block in Podfile
         run: |
           python3 << 'PYTHON'
@@ -26,7 +26,7 @@ jobs:
           podfile_path = 'ios/Podfile'
           with open(podfile_path, 'r') as f:
               content = f.read()
-          
+
           lines = content.split('\n')
           new_lines = []
           in_post_install = False
@@ -36,27 +36,23 @@ jobs:
               if stripped.startswith('post_install') and not in_post_install:
                   in_post_install = True
                   indent_level = len(line) - len(stripped)
-                  continue  # skip the opening line
+                  continue
               if in_post_install:
                   if stripped == 'end' or stripped.startswith('end'):
                       current_indent = len(line) - len(stripped)
                       if current_indent <= indent_level:
                           in_post_install = False
                           continue
-                  # skip all lines inside the block
                   continue
               else:
                   new_lines.append(line)
-          
-          # Append the new correct post_install block
+
           new_lines.append('')
           new_lines.append('post_install do |installer|')
-          new_lines.append('  # Keep existing Flutter settings for Pods')
           new_lines.append('  installer.pods_project.targets.each do |target|')
           new_lines.append('    flutter_additional_ios_build_settings(target)')
           new_lines.append('  end')
           new_lines.append('')
-          new_lines.append('  # Force-set DEVELOPMENT_TEAM for all Pod targets')
           new_lines.append('  installer.pods_project.targets.each do |target|')
           new_lines.append('    target.build_configurations.each do |config|')
           new_lines.append('      config.build_settings["DEVELOPMENT_TEAM"] = "DUMMYTEAM"')
@@ -64,13 +60,13 @@ jobs:
           new_lines.append('    end')
           new_lines.append('  end')
           new_lines.append('end')
-          
+
           with open(podfile_path, 'w') as f:
               f.write('\n'.join(new_lines))
           print("Podfile post_install replaced successfully")
           PYTHON
 
-      # Update CocoaPods repo (with retry)
+      # Update CocoaPods repo
       - name: Update CocoaPods repository with retry
         working-directory: ios
         run: |
@@ -80,7 +76,7 @@ jobs:
             sleep 5
           done
 
-      # Pod install (with retry)
+      # Pod install
       - name: Install CocoaPods dependencies with retry
         working-directory: ios
         run: |
@@ -91,14 +87,14 @@ jobs:
             sleep 10
           done
 
-      # Set dummy team in main project (extra safety)
+      # Set dummy team in the main project (extra safety)
       - name: Set dummy Development Team in Xcode project
         run: |
           PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
           sed -i '' 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = DUMMYTEAM;/g' "$PROJECT_FILE"
           sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' "$PROJECT_FILE"
 
-      # Build
+      # Build – unsigned IPA
       - name: Build iOS (unsigned)
         env:
           CODE_SIGNING_ALLOWED: "NO"
@@ -128,10 +124,6 @@ jobs:
 
       - name: Upload IPA as Artifact
         uses: actions/upload-artifact@v4
-        with:
-          name: FlutterIpaExport.ipa
-          path: build/ios/FlutterIpaExport.ipa
-          retention-days: 7
         with:
           name: FlutterIpaExport.ipa
           path: build/ios/FlutterIpaExport.ipa
