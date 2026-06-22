@@ -18,32 +18,36 @@ jobs:
       - run: flutter clean
       - run: flutter pub get
 
-      # 🔧 CRITICAL FIX: Inject post_install hook into Podfile
-      - name: Add post_install hook to Podfile
+      # 🔧 NEW: Insert DEVELOPMENT_TEAM settings into the existing post_install block
+      - name: Patch Podfile with signing overrides
         run: |
-          # Check if the hook already exists
-          if ! grep -q "post_install do |installer|" ios/Podfile; then
-            echo "Adding post_install hook to Podfile..."
-            cat >> ios/Podfile << 'EOF'
-            
-            post_install do |installer|
-              # Keep existing Flutter settings
-              installer.pods_project.targets.each do |target|
-                flutter_additional_ios_build_settings(target)
-              end
+          python3 << 'PYTHON'
+          import re
+          podfile = 'ios/Podfile'
+          with open(podfile, 'r') as f:
+              content = f.read()
+          
+          # If already patched, skip
+          if 'DEVELOPMENT_TEAM' in content and 'DUMMYTEAM' in content:
+              print('Podfile already patched, skipping')
+              exit(0)
+          
+          # Insert our lines after the flutter_additional_ios_build_settings line
+          # This is inside the post_install block.
+          pattern = r'(flutter_additional_ios_build_settings\(target\)\s*)'
+          replacement = r'''\1
               
               # Force-set DEVELOPMENT_TEAM for all Pod targets
-              installer.pods_project.targets.each do |target|
-                target.build_configurations.each do |config|
-                  config.build_settings['DEVELOPMENT_TEAM'] = 'DUMMYTEAM'
-                  config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-                end
-              end
-            end
-            EOF
-          else
-            echo "post_install hook already exists, skipping..."
-          fi
+              target.build_configurations.each do |config|
+                config.build_settings['DEVELOPMENT_TEAM'] = 'DUMMYTEAM'
+                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+              end'''
+          
+          new_content = re.sub(pattern, replacement, content, count=1)
+          with open(podfile, 'w') as f:
+              f.write(new_content)
+          print('Podfile patched successfully')
+          PYTHON
 
       # Update CocoaPods repo (with retry)
       - name: Update CocoaPods repository with retry
@@ -55,7 +59,7 @@ jobs:
             sleep 5
           done
 
-      # Pod install (with retry) – now uses the updated Podfile
+      # Pod install (with retry) – now uses the patched Podfile
       - name: Install CocoaPods dependencies with retry
         working-directory: ios
         run: |
@@ -111,4 +115,3 @@ jobs:
           name: FlutterIpaExport.ipa
           path: build/ios/FlutterIpaExport.ipa
           retention-days: 7
-          
