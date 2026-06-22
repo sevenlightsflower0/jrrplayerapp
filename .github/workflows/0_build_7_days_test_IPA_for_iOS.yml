@@ -18,11 +18,10 @@ jobs:
       - run: flutter clean
       - run: flutter pub get
 
-      # --- Fix: Replace post_install block with correct version ---
+      # --- Patch Podfile ---
       - name: Replace post_install block in Podfile
         run: |
           python3 << 'PYTHON'
-          import re
           podfile_path = 'ios/Podfile'
           with open(podfile_path, 'r') as f:
               content = f.read()
@@ -63,10 +62,30 @@ jobs:
 
           with open(podfile_path, 'w') as f:
               f.write('\n'.join(new_lines))
-          print("Podfile post_install replaced successfully")
+          print("Podfile patched successfully")
           PYTHON
 
-      # Update CocoaPods repo
+      # --- Force‑patch the main project file ---
+      - name: Patch Xcode project (disable signing completely)
+        run: |
+          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
+          # Override all signing‑related settings for all build configurations
+          sed -i '' \
+            -e 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = DUMMYTEAM;/g' \
+            -e 's/CODE_SIGN_STYLE = .*/CODE_SIGN_STYLE = Manual;/g' \
+            -e 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' \
+            -e 's/PROVISIONING_PROFILE_SPECIFIER = .*/PROVISIONING_PROFILE_SPECIFIER = "";/g' \
+            "$PROJECT_FILE"
+
+          # Verify the changes
+          echo "--- DEVELOPMENT_TEAM lines ---"
+          grep "DEVELOPMENT_TEAM" "$PROJECT_FILE" || echo "No DEVELOPMENT_TEAM found (might be missing)"
+          echo "--- CODE_SIGN_STYLE lines ---"
+          grep "CODE_SIGN_STYLE" "$PROJECT_FILE" || echo "No CODE_SIGN_STYLE found"
+          echo "--- CODE_SIGN_IDENTITY lines ---"
+          grep "CODE_SIGN_IDENTITY" "$PROJECT_FILE" || echo "No CODE_SIGN_IDENTITY found"
+
+      # --- Install Pods ---
       - name: Update CocoaPods repository with retry
         working-directory: ios
         run: |
@@ -76,7 +95,6 @@ jobs:
             sleep 5
           done
 
-      # Pod install
       - name: Install CocoaPods dependencies with retry
         working-directory: ios
         run: |
@@ -87,20 +105,14 @@ jobs:
             sleep 10
           done
 
-      # Set dummy team in the main project (extra safety)
-      - name: Set dummy Development Team in Xcode project
-        run: |
-          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
-          sed -i '' 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = DUMMYTEAM;/g' "$PROJECT_FILE"
-          sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' "$PROJECT_FILE"
-
-      # Build – unsigned IPA
+      # --- Build ---
       - name: Build iOS (unsigned)
         env:
           CODE_SIGNING_ALLOWED: "NO"
           CODE_SIGN_IDENTITY: ""
         run: flutter build ios --release --no-codesign
 
+      # --- Package IPA ---
       - name: Create Payload and IPA
         working-directory: build/ios/iphoneos
         run: |
