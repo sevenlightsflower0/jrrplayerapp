@@ -65,25 +65,42 @@ jobs:
           print("Podfile patched successfully")
           PYTHON
 
-      # --- Force‑patch the main project file ---
-      - name: Patch Xcode project (disable signing completely)
+      # --- Patch Xcode project using plutil (foolproof) ---
+      - name: Force disable code signing in Xcode project
         run: |
           PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
-          # Override all signing‑related settings for all build configurations
-          sed -i '' \
-            -e 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = DUMMYTEAM;/g' \
-            -e 's/CODE_SIGN_STYLE = .*/CODE_SIGN_STYLE = Manual;/g' \
-            -e 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' \
-            -e 's/PROVISIONING_PROFILE_SPECIFIER = .*/PROVISIONING_PROFILE_SPECIFIER = "";/g' \
-            "$PROJECT_FILE"
+          # Convert to JSON
+          plutil -convert json -o /tmp/project.json "$PROJECT_FILE"
+          # Use Python to set signing settings for all build configurations
+          python3 << 'PYTHON'
+          import json
+          with open('/tmp/project.json', 'r') as f:
+              data = json.load(f)
 
-          # Verify the changes
-          echo "--- DEVELOPMENT_TEAM lines ---"
-          grep "DEVELOPMENT_TEAM" "$PROJECT_FILE" || echo "No DEVELOPMENT_TEAM found (might be missing)"
-          echo "--- CODE_SIGN_STYLE lines ---"
-          grep "CODE_SIGN_STYLE" "$PROJECT_FILE" || echo "No CODE_SIGN_STYLE found"
-          echo "--- CODE_SIGN_IDENTITY lines ---"
-          grep "CODE_SIGN_IDENTITY" "$PROJECT_FILE" || echo "No CODE_SIGN_IDENTITY found"
+          # Iterate over all objects
+          for obj in data.get('objects', {}).values():
+              if isinstance(obj, dict) and obj.get('isa') == 'XCBuildConfiguration':
+                  if 'buildSettings' not in obj:
+                      obj['buildSettings'] = {}
+                  settings = obj['buildSettings']
+                  # Override all signing-related settings
+                  settings['DEVELOPMENT_TEAM'] = 'DUMMYTEAM'
+                  settings['CODE_SIGN_STYLE'] = 'Manual'
+                  settings['CODE_SIGN_IDENTITY'] = ''
+                  settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+                  settings['PROVISIONING_PROFILE'] = ''
+                  settings['CODE_SIGNING_ALLOWED'] = 'NO'
+
+          with open('/tmp/project.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          PYTHON
+          # Convert back to the original plist format
+          plutil -convert xml1 -o "$PROJECT_FILE" /tmp/project.json
+          echo "Project patched successfully"
+
+          # Verify a few settings
+          echo "--- Checking patched settings ---"
+          grep -E "DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY" "$PROJECT_FILE" | head -20
 
       # --- Install Pods ---
       - name: Update CocoaPods repository with retry
