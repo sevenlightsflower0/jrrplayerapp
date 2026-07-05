@@ -325,7 +325,12 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     await _initConnectivity();
     
     // Настройка слушателя соединения
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(_updateConnectionStatus);
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((result) {
+      // connectivity_plus may emit either a single ConnectivityResult or a list of results depending on platform/version
+      for (var r in result) {
+        _updateConnectionStatus(r);
+      }
+        }) as StreamSubscription<ConnectivityResult>;
     
     // Настройка скролла
     _scrollController.addListener(_scrollListener);
@@ -340,7 +345,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
   Future<void> _initConnectivity() async {
     try {
       final result = await _connectivity.checkConnectivity();
-      _updateConnectionType(result);
+      _updateConnectionType(result as ConnectivityResult);
     } catch (e) {
       debugPrint('Connectivity check error: $e');
     }

@@ -331,8 +331,11 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
         await _player?.setLoopMode(LoopMode.off);
       }
 
-      _connectivityResult = await _connectivity.checkConnectivity();
-      _connectivity.onConnectivityChanged.listen(_handleNetworkChange);
+      final connectivityList = await _connectivity.checkConnectivity();
+      _connectivityResult = connectivityList.isNotEmpty ? connectivityList.first : ConnectivityResult.none;
+      _connectivity.onConnectivityChanged.listen((result) {
+        _handleNetworkChange(result.first);
+      });
 
       _isInitialized = true;
       _isDisposed = false;
