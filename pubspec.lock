@@ -464,6 +464,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.0"
+  objective_c:
+    dependency: "direct overridden"
+    description:
+      name: objective_c
+      sha256: "1f81ed9e41909d44162d7ec8663b2c647c202317cc0b56d3d56f6a13146a0b64"
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.1.0"
   octo_image:
     dependency: transitive
     description:
@@ -592,6 +600,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.5+1"
+  pub_semver:
+    dependency: transitive
+    description:
+      name: pub_semver
+      sha256: "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.0"
   rxdart:
     dependency: transitive
     description:
