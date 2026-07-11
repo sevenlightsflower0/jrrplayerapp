@@ -46,6 +46,9 @@ dev_dependencies:
     sdk: flutter
   flutter_launcher_icons: ^0.14.3
   flutter_lints: ^3.0.0
+  
+dependency_overrides:
+  objective_c: 9.1.0
 
 flutter_launcher_icons:
   android: true
