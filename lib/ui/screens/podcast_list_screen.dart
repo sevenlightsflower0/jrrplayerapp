@@ -325,12 +325,7 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
     await _initConnectivity();
     
     // Настройка слушателя соединения
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((result) {
-      // connectivity_plus may emit either a single ConnectivityResult or a list of results depending on platform/version
-      for (var r in result) {
-        _updateConnectionStatus(r);
-      }
-        }) as StreamSubscription<ConnectivityResult>;
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(_handleConnectivityResult) as StreamSubscription<ConnectivityResult>;
     
     // Настройка скролла
     _scrollController.addListener(_scrollListener);
@@ -345,9 +340,23 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
   Future<void> _initConnectivity() async {
     try {
       final result = await _connectivity.checkConnectivity();
-      _updateConnectionType(result as ConnectivityResult);
+      _handleConnectivityResult(result);
     } catch (e) {
       debugPrint('Connectivity check error: $e');
+    }
+  }
+
+  void _handleConnectivityResult(dynamic result) {
+    List<ConnectivityResult> results;
+    if (result is List<ConnectivityResult>) {
+      results = result;
+    } else if (result is ConnectivityResult) {
+      results = [result];
+    } else {
+      results = [];
+    }
+    for (var r in results) {
+      _updateConnectionType(r);
     }
   }
 
@@ -364,15 +373,6 @@ class _PodcastListScreenState extends State<PodcastListScreen> {
           _connectionType = ConnectionType.offline;
       }
     });
-  }
-
-  void _updateConnectionStatus(ConnectivityResult result) {
-    _updateConnectionType(result);
-    
-    // Автозагрузка при восстановлении соединения
-    if (result != ConnectivityResult.none && podcasts.isEmpty) {
-      _loadPodcasts();
-    }
   }
 
   Future<void> _testProxiesInBackground() async {
