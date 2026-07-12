@@ -465,7 +465,8 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               builder: (_, metadata, __) {
                 String trackText = metadata?.title ?? 'J-Rock Radio';
                 if (metadata?.album != null && metadata!.album!.isNotEmpty) {
-                  trackText = '${metadata.title} - ${metadata.album}';
+                //  trackText = '${metadata.title} - ${metadata.album}';
+                  trackText = metadata.title;
                 }
                 return Padding(
                   padding: EdgeInsets.symmetric(horizontal: largeSpacing),
@@ -520,7 +521,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               valueListenable: _metadataNotifier,
               builder: (_, metadata, __) {
                 return Text(
-                  metadata?.artist ?? 'Live Stream',
+                  metadata?.artist ?? 'Онлайн радио',
                   style: TextStyle(
                     fontSize: isCompact ? 16 : 18,
                     fontWeight: FontWeight.bold,

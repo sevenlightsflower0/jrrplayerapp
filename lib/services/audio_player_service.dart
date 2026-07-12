@@ -530,8 +530,8 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
               artist = parts.$2;
             }
 
-            artist ??= 'J-Rock Radio';
-            title ??= 'Live Stream';
+            artist ??= 'Радио J-Rock';
+            title ??= 'Онлайн радио';
 
             final cacheKey = '$artist|$title';
             String? cachedCoverUrl;
@@ -1011,7 +1011,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
         const mediaItem = MediaItem(
           id: 'jrr_live_stream',
           title: 'J-Rock Radio',
-          artist: 'Live Stream',
+          artist: 'Онлайн радио',
           album: 'Онлайн радио',
           artUri: null,
         );
@@ -1240,7 +1240,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       final mediaItem = MediaItem(
         id: episode.id,
         title: episode.title,
-        artist: 'J-Rock Radio',
+        artist: 'Подкаст J-Rock',
         album: 'Подкасты',
         artUri: artUrl != null && artUrl.isNotEmpty ? Uri.parse(artUrl) : null,
         duration: episode.duration,
@@ -1249,8 +1249,8 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       // Создаём AudioMetadata для внутреннего использования
       final podcastMetadata = AudioMetadata(
         title: episode.title,
-        artist: 'J-Rock Radio',
-        album: 'Подкаст J-Rock',
+        artist: 'Подкаст J-Rock',
+        album: 'Подкасты',
         artUrl: artUrl,
       );
 
@@ -1332,7 +1332,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       final mediaItem = MediaItem(
         id: episode.id,
         title: episode.title,
-        artist: 'J-Rock Radio',
+        artist: 'Подкаст J-Rock',
         album: 'Подкасты',
         artUri: artUrl != null && artUrl.isNotEmpty ? Uri.parse(artUrl) : null,
         duration: episode.duration,
@@ -1341,7 +1341,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       // Создаём AudioMetadata для внутреннего использования
       final podcastMetadata = AudioMetadata(
         title: episode.title,
-        artist: 'J-Rock Radio',
+        artist: 'Подкаст J-Rock',
         album: 'Подкаст J-Rock',
         artUrl: artUrl,
       );

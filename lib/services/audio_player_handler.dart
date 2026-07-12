@@ -335,7 +335,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       id: mediaId,
       title: metadata.title,
       artist: metadata.artist,
-      album: metadata.album ?? (isRadio ? 'Онлайн радио' : 'J-Rock Radio'),
+//      album: metadata.album ?? (isRadio ? 'Онлайн радио' : 'Радмо J-Rock'),
       artUri: artUri,
       duration: isRadio ? null : duration,
       extras: {
@@ -352,7 +352,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
         _currentMediaItem!.id == newItem.id &&
         _currentMediaItem!.title == newItem.title &&
         _currentMediaItem!.artist == newItem.artist &&
-        _currentMediaItem!.album == newItem.album &&
+//        _currentMediaItem!.album == newItem.album &&
         _currentMediaItem!.artUri?.toString() == newItem.artUri?.toString() &&
         _currentMediaItem!.duration == newItem.duration) {
       debugPrint('🎵 [Handler] MediaItem unchanged, skipping');
@@ -574,9 +574,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
     const defaultCoverUrl = AudioMetadata.defaultCoverUrl;
     _currentMediaItem = MediaItem(
       id: 'jrr_live_stream',
-      title: 'J-Rock Radio',
-      artist: 'Live Stream',
-      album: 'Онлайн радио',
+      title: 'Радио J-Rock',
+      artist: 'Онлайн радио',
       artUri: _getArtUriForPlatform(defaultCoverUrl),
       extras: {'isRadio': true},
     );
