@@ -463,7 +463,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
             ValueListenableBuilder<AudioMetadata?>(
               valueListenable: _metadataNotifier,
               builder: (_, metadata, __) {
-                String trackText = metadata?.title ?? 'J-Rock Radio';
+                String trackText = metadata?.title ?? 'Радио J-Rock';
                 if (metadata?.album != null && metadata!.album!.isNotEmpty) {
                 //  trackText = '${metadata.title} - ${metadata.album}';
                   trackText = metadata.title;

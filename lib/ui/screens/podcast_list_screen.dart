@@ -79,7 +79,7 @@ List<PodcastEpisode> _parseRssQuickly(String responseBody, {int limit = 20}) {
           duration: Duration.zero,
           publishedDate: DateTime.now(),
           channelId: 'jrr_podcast_channel',
-          channelTitle: 'J-Rock Radio Podcasts',
+          channelTitle: 'Подкасты',
         ));
         
         parsedCount++;
@@ -212,7 +212,7 @@ List<PodcastEpisode> _parseRssFull(String responseBody) {
           duration: duration,
           publishedDate: publishedDate,
           channelId: 'jrr_podcast_channel',
-          channelTitle: 'J-Rock Radio Podcasts',
+          channelTitle: 'Подкасты',
         ));
       } catch (e) {
         // Игнорируем ошибки парсинга отдельных элементов

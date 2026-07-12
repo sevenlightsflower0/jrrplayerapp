@@ -236,7 +236,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
         builder: () => AudioPlayerHandler(this),
         config: AudioServiceConfig(
           androidNotificationChannelId: 'com.jrrplayerapp.channel.audio',
-          androidNotificationChannelName: 'J-Rock Radio',
+          androidNotificationChannelName: 'Радио J-Rock',
           androidNotificationOngoing: true,
           androidStopForegroundOnPause: false,
           rewindInterval: const Duration(seconds: 30),
@@ -562,7 +562,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
               final metadata = AudioMetadata(
                 title: title,
                 artist: artist,
-                album: 'J-Rock Radio',
+                album: 'Радио J-Rock',
                 artUrl: artUrl,
               );
 
@@ -712,7 +712,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
         final metadata = AudioMetadata(
           title: songTitle,
           artist: artist,
-          album: 'J-Rock Radio',
+          album: 'Радио J-Rock',
           artUrl: cachedCoverUrl ?? AudioMetadata.defaultCoverUrl,
         );
 
@@ -801,7 +801,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
     }
 
     debugPrint('🎵 No separator found, using full title as title');
-    return (fullTitle, 'J-Rock Radio');
+    return (fullTitle, 'Радио J-Rock');
   }
 
   bool _looksLikeTitle(String text) {
@@ -1010,7 +1010,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
         // Создаем MediaItem для радио
         const mediaItem = MediaItem(
           id: 'jrr_live_stream',
-          title: 'J-Rock Radio',
+          title: 'Радио J-Rock',
           artist: 'Онлайн радио',
           album: 'Онлайн радио',
           artUri: null,
@@ -1342,7 +1342,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
       final podcastMetadata = AudioMetadata(
         title: episode.title,
         artist: 'Подкаст J-Rock',
-        album: 'Подкаст J-Rock',
+        album: 'Подкасты',
         artUrl: artUrl,
       );
 
@@ -1387,7 +1387,7 @@ class AudioPlayerService with ChangeNotifier, WidgetsBindingObserver {
           AudioMetadata(
             title: episode.title,
             artist: episode.channelTitle,
-            album: 'J-Rock Radio Podcast',
+            album: 'Подкасты',
             artUrl: episode.imageUrl ?? episode.channelImageUrl,
           )
         );

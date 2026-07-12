@@ -12,7 +12,7 @@ Future<void> main() async {
 
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.yourname.jrrplayerapp.channel.audio',
-    androidNotificationChannelName: 'J-Rock Radio Playback',
+    androidNotificationChannelName: 'Плейбэк Радио J-Rock',
     androidNotificationOngoing: true,
     androidShowNotificationBadge: true,
     androidNotificationIcon: 'mipmap/ic_launcher', // можно заменить на свой
@@ -42,7 +42,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'J-Rock Radio Player',
+      title: 'Плеер Радио J-Rock',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: AppColors.customStyle),
         visualDensity: VisualDensity.adaptivePlatformDensity,
