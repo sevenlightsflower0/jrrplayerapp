@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/models/news.dart';
 
@@ -33,9 +34,13 @@ class NewsItem extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 8),
-              Text(
-                news.description,
-                style: const TextStyle(color: AppColors.customWhite, fontSize: 14),
+              // ✅ Правильный способ: обернуть в DefaultTextStyle
+              DefaultTextStyle(
+                style: const TextStyle(
+                  color: AppColors.customWhite,
+                  fontSize: 14,
+                ),
+                child: Html(data: news.description),
               ),
             ],
           ),
@@ -44,10 +49,7 @@ class NewsItem extends StatelessWidget {
     );
   }
 
-  // Implemented navigation method
   void _openNewsDetail(BuildContext context) {
-    // You can use Navigator to push a new route
-    // For now, we'll show a simple dialog as placeholder
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -70,7 +72,11 @@ class NewsItem extends StatelessWidget {
                 style: const TextStyle(color: AppColors.customDarkGrey, fontSize: 12),
               ),
               const SizedBox(height: 8),
-              Text(news.description),
+              // Тоже используем DefaultTextStyle для согласованности
+              DefaultTextStyle(
+                style: const TextStyle(color: AppColors.customBlack),
+                child: Html(data: news.description),
+              ),
             ],
           ),
         ),
@@ -82,12 +88,5 @@ class NewsItem extends StatelessWidget {
         ],
       ),
     );
-    
-    // For actual navigation to a detail page, you would use:
-    // Navigator.of(context).push(
-    //   MaterialPageRoute(
-    //     builder: (context) => NewsDetailPage(news: news),
-    //   ),
-    // );
   }
 }

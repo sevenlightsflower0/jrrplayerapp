@@ -217,37 +217,47 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
 
   News? _parseTelegramMessage(dom.Element element) {
     try {
-      // Извлекаем ID сообщения
       final messageElement = element.querySelector('.tgme_widget_message');
       final dataPost = messageElement?.attributes['data-post'];
       final messageId = dataPost?.split('/').last ?? '';
 
-      // Заголовок
-      final titleElement = element.querySelector('.tgme_widget_message_text b');
-      final title = titleElement?.text.trim();
+      final textElement = element.querySelector('.tgme_widget_message_text');
+      if (textElement == null) return null;
 
-      if (title == null || title.isEmpty) {
-        return null;
+      // --- Полный HTML (сохраняет все теги и структуру) ---
+      final fullHtml = textElement.innerHtml;  // <-- вместо .text
+
+      // --- Извлекаем заголовок из первого <b> ---
+      String title = '';
+      final boldElement = textElement.querySelector('b');
+      if (boldElement != null) {
+        title = _cleanText(boldElement.text); // очищаем только для заголовка
       }
+      if (title.isEmpty) {
+        // Если нет <b> – берём первую строку из текста
+        final firstLine = fullHtml.split(RegExp(r'<br\s*/?>|\n')).first;
+        final tmp = parser.parse(firstLine);
+        title = _cleanText(tmp.text ?? '');
+      }
+      if (title.isEmpty) title = 'Новость';
 
-      // URL сообщения
+      // --- URL ---
       final urlElement = element.querySelector('.tgme_widget_message_date');
       var url = urlElement?.attributes['href'];
       if (url == null || url.isEmpty) {
         url = 'https://t.me/jrr_news/$messageId';
       }
 
-      // Дата и время
+      // --- Дата ---
       final timeElement = element.querySelector('time');
       var dateTime = timeElement?.attributes['datetime'];
       if (dateTime == null || dateTime.isEmpty) {
         dateTime = _getCurrentDate();
       } else {
-        // Преобразуем ISO дату в читаемый формат
         dateTime = _formatDateTime(dateTime);
       }
 
-      // Изображение
+      // --- Изображение ---
       String? imageUrl;
       final photoWrap = element.querySelector('.tgme_widget_message_photo_wrap');
       if (photoWrap != null) {
@@ -258,44 +268,12 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         }
       }
 
-      // === БЛОК: текст + источник (с дополнительной новой строкой перед 📡) ===
-      final textElement = element.querySelector('.tgme_widget_message_text');
-      String description = '';
-      String source = 'JRR News';
-
-      if (textElement != null) {
-        final clonedElement = textElement.clone(true);
-        
-        // Удаляем заголовок (жирный текст)
-        clonedElement.querySelector('b')?.remove();
-        
-        // Удаляем последний <i> — это и есть источник
-        final lastItalic = clonedElement.querySelector('i:last-child');
-        if (lastItalic != null) {
-          source = _cleanText(lastItalic.text.trim());
-          // Удаляем возможный 📡 из source, чтобы потом добавить свой
-          source = source.replaceAll('📡', '').trim();
-          lastItalic.remove();
-        }
-
-        description = _cleanText(clonedElement.text.trim());
-      }
-
-      // Если описание пустое — используем заголовок
-      if (description.isEmpty) {
-        description = title;
-      }
-
-      // Удаляем все возможные 📡 из описания, чтобы не было дублирования
-      description = description.replaceAll('📡', '').trim();
-
       return News(
         id: messageId.isNotEmpty ? messageId : url,
-        title: _cleanText(title),
+        title: title,
         date: _cleanText(dateTime),
         imageUrl: imageUrl ?? '',
-        // Теперь ровно один 📡 перед источником
-        description: '$description\n📡 $source',
+        description: fullHtml,  // ← сохраняем HTML как есть
         url: url,
       );
     } catch (e) {
