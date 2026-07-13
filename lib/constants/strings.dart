@@ -9,7 +9,7 @@ class AppStrings {
   static const String articlesTab = 'Актуальное';
   static const String newsTab = 'Новости';
   static const String podcastsTab = 'Hora Bissexta';
-  static const String enlargeTabsButton = 'Увеличить табы';
+  static const String enlargeTabsButton = 'Увеличить вкладки';
   
   // Placeholders
   static const String articlesComingSoon = 'Articles Screen - Coming Soon';

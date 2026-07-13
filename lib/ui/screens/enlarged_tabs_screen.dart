@@ -6,7 +6,8 @@ import 'package:jrrplayerapp/ui/screens/news_feed_screen.dart';
 import 'package:jrrplayerapp/ui/screens/podcast_list_screen.dart';
 
 class EnlargedTabsScreen extends StatefulWidget {
-  const EnlargedTabsScreen({super.key});
+  final int initialIndex;
+  const EnlargedTabsScreen({super.key, this.initialIndex = 0});
 
   @override
   State<EnlargedTabsScreen> createState() => _EnlargedTabsScreenState();
@@ -19,7 +20,11 @@ class _EnlargedTabsScreenState extends State<EnlargedTabsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: widget.initialIndex, // ← используем переданный индекс
+    );
   }
 
   @override

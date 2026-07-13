@@ -71,10 +71,10 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     return SizedBox(
       height: availableHeight * 0.55,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start, // прижимаем к верху
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(top: 8), // небольшой отступ сверху
+            padding: const EdgeInsets.only(top: 8),
             child: RadioButtonWithWaves(screenWidth: availableWidth),
           ),
           const AudioPlayerWidget(),
@@ -102,7 +102,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                 Tab(text: AppStrings.podcastsTab),
               ],
             ),
-            const SizedBox(height: 8),   // adds spacing
+            const SizedBox(height: 8),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -118,12 +118,16 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         Positioned(
           bottom: 12,
           left: 0,
-          right: 0,          
+          right: 0,
           child: ElevatedButton(
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const EnlargedTabsScreen()),
+                MaterialPageRoute(
+                  builder: (context) => EnlargedTabsScreen(
+                    initialIndex: _tabController.index, // ← передаём текущий индекс
+                  ),
+                ),
               );
             },
             style: ElevatedButton.styleFrom(
@@ -205,7 +209,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                     children: [
                       Column(
                         children: [
-                          // Социальные кнопки с минимальным отступом
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                             child: _buildSocialButtons(buttonSize),
@@ -234,7 +237,11 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const EnlargedTabsScreen()),
+                              MaterialPageRoute(
+                                builder: (context) => EnlargedTabsScreen(
+                                  initialIndex: _tabController.index, // ← передаём индекс
+                                ),
+                              ),
                             );
                           },
                           style: ElevatedButton.styleFrom(
@@ -264,21 +271,19 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Левая часть – теперь на всю высоту, содержимое прижато к верху
                             SizedBox(
                               width: leftWidth,
-                              height: availableHeight, // ← добавляем высоту
+                              height: availableHeight,
                               child: Column(
-                                mainAxisSize: MainAxisSize.max, // можно не указывать, по умолчанию max 
+                                mainAxisSize: MainAxisSize.max,
                                 children: [
                                   RadioButtonWithWaves(screenWidth: leftWidth),
-                                  const Expanded(               // player takes remaining height
+                                  const Expanded(
                                     child: AudioPlayerWidget(),
                                   ),
                                 ],
                               ),
                             ),
-                            // Правая часть
                             Expanded(
                               child: SizedBox(
                                 height: availableHeight,
