@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:jrrplayerapp/constants/app_colors.dart';
 import 'package:jrrplayerapp/models/news.dart';
+import 'package:jrrplayerapp/ui/screens/news_detail_screen.dart'; // ← добавьте импорт
 
 class NewsItem extends StatelessWidget {
   final News news;
@@ -34,7 +35,6 @@ class NewsItem extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 8),
-              // ✅ Правильный способ: обернуть в DefaultTextStyle
               DefaultTextStyle(
                 style: const TextStyle(
                   color: AppColors.customWhite,
@@ -49,43 +49,12 @@ class NewsItem extends StatelessWidget {
     );
   }
 
+  // Новый метод – открывает полноэкранный экран вместо диалога
   void _openNewsDetail(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(news.title),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (news.imageUrl.isNotEmpty)
-                Image.network(
-                  news.imageUrl,
-                  height: 150,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              const SizedBox(height: 16),
-              Text(
-                news.date,
-                style: const TextStyle(color: AppColors.customDarkGrey, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              // Тоже используем DefaultTextStyle для согласованности
-              DefaultTextStyle(
-                style: const TextStyle(color: AppColors.customBlack),
-                child: Html(data: news.description),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NewsDetailScreen(news: news),
       ),
     );
   }
