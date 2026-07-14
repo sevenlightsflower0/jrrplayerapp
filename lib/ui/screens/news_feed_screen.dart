@@ -245,7 +245,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
       final urlElement = element.querySelector('.tgme_widget_message_date');
       var url = urlElement?.attributes['href'];
       if (url == null || url.isEmpty) {
-        url = 'https://t.me/jrr_news/$messageId';
+        url = '${AppStrings.telegramNewsBaseUrl}$messageId';
       }
 
       // --- Дата ---

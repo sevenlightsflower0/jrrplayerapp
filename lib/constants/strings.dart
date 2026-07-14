@@ -18,10 +18,12 @@ class AppStrings {
   // URLs
   static const String livestreamUrl = 'https://nradio.net/jrock';
   static const String vkontakteUrl = 'https://vk.com/jrockradio';
-  static const String telegramUrl = 'https://t.me/jrockradio';
+  static const String telegramUrl = 'https://telegram.me/jrockradio';
   static const String wwweblinkUrl = 'https://jrock.pro';
   static const String articlesFeedUrl = 'https://jrock.pro/lenta';
-  static const String newsFeedUrl = 'https://t.me/s/jrr_news';
+  static const String newsFeedUrl = 'https://telegram.me/s/jrr_news';
+    // Базовый URL для отдельных новостей (по ID)
+  static const String telegramNewsBaseUrl = 'https://telegram.me/jrr_news/';
   // Podcast RSS Feed mit Proxy-Optionen
   static const String podcastRssOriginalUrl = 'https://cloud.mave.digital/61074';
   static const List<String> corsProxies = [
