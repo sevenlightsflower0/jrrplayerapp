@@ -69,7 +69,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   // Верхняя часть (радио + плеер) – теперь прижата к верху
   Widget _buildTopPart({required double availableWidth, required double availableHeight}) {
     return SizedBox(
-      height: availableHeight * 0.55,
+      height: availableHeight * 0.6,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
